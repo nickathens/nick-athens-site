@@ -250,6 +250,15 @@ body {
 }
 
 /* Solo Section */
+.solo-projects-row {
+    display: flex;
+    gap: 4rem;
+}
+
+.solo-project {
+    flex: 0 0 auto;
+}
+
 .solo-subsection {
     margin-bottom: 6rem;
 }
@@ -457,6 +466,11 @@ body {
     .hero-grid {
         --cols: 6;
         --rows: 10;
+    }
+
+    .solo-projects-row {
+        flex-direction: column;
+        gap: 3rem;
     }
 }
 
