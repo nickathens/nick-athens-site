@@ -36,7 +36,7 @@ function initAudioContext() {
 
 // Play a random tuning note with fade (synthesized)
 function playTuningNote() {
-    if (!tuningEnabled) return;
+    if (!tuningEnabled) return null;
 
     initAudioContext();
 
@@ -81,27 +81,29 @@ function playTuningNote() {
 // Apply color flash to cell that fades out
 function flashCell(cell, duration) {
     const color = cellColors[Math.floor(Math.random() * cellColors.length)];
-
-    // Store original background
-    const originalBg = cell.classList.contains('off') ? 'transparent' : 'var(--white)';
     const wasOff = cell.classList.contains('off');
 
-    // Apply color
+    // Immediately show color - no transition for the initial flash
+    cell.style.transition = 'none';
     cell.style.backgroundColor = color;
     cell.style.opacity = '1';
     if (wasOff) cell.classList.remove('off');
 
-    // Fade back to original over the note duration
+    // Force reflow to apply the immediate color
+    cell.offsetHeight;
+
+    // Now set up the fade transition
     cell.style.transition = `background-color ${duration}s ease-out, opacity ${duration}s ease-out`;
 
+    // Fade to transparent/original
     requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            cell.style.backgroundColor = wasOff ? color : originalBg;
-            cell.style.opacity = wasOff ? '0' : '1';
-        });
+        cell.style.backgroundColor = 'transparent';
+        if (wasOff) {
+            cell.style.opacity = '0';
+        }
     });
 
-    // Reset after animation
+    // Reset after animation completes
     setTimeout(() => {
         cell.style.transition = 'opacity 0.5s ease';
         cell.style.backgroundColor = '';
@@ -175,9 +177,6 @@ function initHeroGrid() {
 
     // Run animation every 300ms
     setInterval(animateCells, 300);
-
-    // Preload tuning notes
-    preloadTuningNotes();
 }
 
 // Mobile Navigation
