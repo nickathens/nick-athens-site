@@ -333,8 +333,7 @@ function initAudioPlayer() {
 
     // Show player with tracks
     function showPlayer(projectName, tracks) {
-        // Disable grid tuning when music plays
-        tuningEnabled = false;
+        // Grid tuning can play in parallel with music - no longer disabled
 
         currentPlaylist = tracks;
         projectEl.textContent = projectName;
@@ -360,8 +359,6 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
-            // Re-enable grid tuning when music stops
-            tuningEnabled = true;
         }, 300);
     }
 
