@@ -50,7 +50,7 @@
                     <span class="film-year">2024</span>
                 </div>
             </article>
-            <article class="film-card" data-year="2023">
+            <article class="film-card" data-year="2023" data-playlist="OLAK5uy_nvAu9BX99dUtwY-ZrqohxkqywikXyr44Y">
                 <div class="film-poster">
                     <img src="images/films/light-falls.jpg" alt="Light Falls" onerror="this.src='images/placeholder.svg'">
                 </div>
@@ -89,7 +89,7 @@
                     <span class="film-note">Short</span>
                 </div>
             </article>
-            <article class="film-card" data-year="2019">
+            <article class="film-card" data-year="2019" data-playlist="PLh4DLWQqMsc0sZxCLHdWtZZ_nimNoCgqw">
                 <div class="film-poster">
                     <img src="images/films/mount-athos.jpg" alt="Mount Athos" onerror="this.src='images/placeholder.svg'">
                 </div>
@@ -168,6 +168,13 @@
     <footer class="footer">
         <span>&copy; 2025 Nick Athens</span>
     </footer>
+
+    <!-- Floating mini player -->
+    <div class="mini-player" id="miniPlayer">
+        <button class="mini-player-close" id="miniPlayerClose">&times;</button>
+        <div class="mini-player-title" id="miniPlayerTitle"></div>
+        <iframe id="miniPlayerFrame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
 
     <script src="js/main.js"></script>
 </body>

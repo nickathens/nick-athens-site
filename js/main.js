@@ -95,11 +95,56 @@ function initSmoothScroll() {
     });
 }
 
+// Film Player
+function initFilmPlayer() {
+    const miniPlayer = document.getElementById('miniPlayer');
+    const miniPlayerFrame = document.getElementById('miniPlayerFrame');
+    const miniPlayerTitle = document.getElementById('miniPlayerTitle');
+    const miniPlayerClose = document.getElementById('miniPlayerClose');
+    const filmCards = document.querySelectorAll('.film-card[data-playlist]');
+
+    if (!miniPlayer || !filmCards.length) return;
+
+    filmCards.forEach(card => {
+        card.addEventListener('click', () => {
+            const playlistId = card.dataset.playlist;
+            const title = card.querySelector('h3').textContent;
+
+            // Remove playing class from all cards
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+
+            // Add playing class to clicked card
+            card.classList.add('playing');
+
+            // Update mini player
+            miniPlayerTitle.textContent = title;
+            miniPlayerFrame.src = `https://www.youtube.com/embed/videoseries?list=${playlistId}&autoplay=1`;
+
+            // Show player with animation
+            miniPlayer.style.display = 'block';
+            requestAnimationFrame(() => {
+                miniPlayer.classList.add('active');
+            });
+        });
+    });
+
+    // Close button
+    miniPlayerClose.addEventListener('click', () => {
+        miniPlayer.classList.remove('active');
+        setTimeout(() => {
+            miniPlayer.style.display = 'none';
+            miniPlayerFrame.src = '';
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+        }, 300);
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initHeroGrid();
     initMobileNav();
     initSmoothScroll();
+    initFilmPlayer();
 });
 
 // Reinitialize grid on resize

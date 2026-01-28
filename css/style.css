@@ -417,3 +417,82 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* Mini Player */
+.mini-player {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 320px;
+    background: var(--gray-dark);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    display: none;
+    transform: translateY(20px);
+    opacity: 0;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.mini-player.active {
+    display: block;
+    transform: translateY(0);
+    opacity: 1;
+}
+
+.mini-player-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    border-radius: 50%;
+    color: var(--white);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 10;
+    transition: background 0.2s ease;
+}
+
+.mini-player-close:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.mini-player-title {
+    padding: 12px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: var(--black);
+}
+
+.mini-player iframe {
+    width: 100%;
+    aspect-ratio: 16/9;
+    border: none;
+    display: block;
+}
+
+/* Active film card (selected) */
+.film-card.playing .film-poster img {
+    filter: grayscale(0%);
+}
+
+.film-card.playing::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--white);
+    pointer-events: none;
+}
+
+@media (max-width: 480px) {
+    .mini-player {
+        width: calc(100% - 40px);
+        left: 20px;
+        right: 20px;
+    }
+}
