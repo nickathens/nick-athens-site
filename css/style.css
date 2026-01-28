@@ -112,14 +112,12 @@ body {
 }
 
 .hero-grid .cell.logo-cell {
-    background: var(--black);
+    background: #000;
     opacity: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
-    /* Override parent's opacity */
-    filter: brightness(2.5);
     overflow: hidden;
 }
 
