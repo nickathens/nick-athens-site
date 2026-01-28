@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nick Athens | Composer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-links">
+            <a href="#film">Film</a>
+            <a href="#solo">Solo</a>
+            <a href="#about">About</a>
+            <a href="#contact">Contact</a>
+        </div>
+        <button class="nav-toggle" aria-label="Toggle menu">
+            <span></span>
+            <span></span>
+            <span></span>
+        </button>
+    </nav>
+
+    <section class="hero" id="hero">
+        <div class="hero-grid" id="heroGrid"></div>
+    </section>
+
+    <section class="section film" id="film">
+        <h2 class="section-title">Film</h2>
+        <div class="film-grid">
+            <article class="film-card" data-year="2025">
+                <div class="film-poster">
+                    <img src="images/films/gorgona.jpg" alt="Gorgonà" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>Gorgonà</h3>
+                    <span class="film-year">2025</span>
+                    <span class="film-note">Venice Film Festival</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2024">
+                <div class="film-poster">
+                    <img src="images/films/what-mary-didnt-know.jpg" alt="What Mary Didn't Know" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>What Mary Didn't Know</h3>
+                    <span class="film-year">2024</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2023">
+                <div class="film-poster">
+                    <img src="images/films/light-falls.jpg" alt="Light Falls" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>Light Falls</h3>
+                    <span class="film-year">2023</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2023">
+                <div class="film-poster">
+                    <img src="images/films/super.jpg" alt="Super" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>Super</h3>
+                    <span class="film-year">2023</span>
+                    <span class="film-note">Short</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2021">
+                <div class="film-poster">
+                    <img src="images/films/a-summer-place.jpg" alt="A Summer Place" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>A Summer Place</h3>
+                    <span class="film-year">2021</span>
+                    <span class="film-note">Short</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2021">
+                <div class="film-poster">
+                    <img src="images/films/o-rolos.jpg" alt="O rolos tis zois mou" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>O rolos tis zois mou</h3>
+                    <span class="film-year">2021</span>
+                    <span class="film-note">Short</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2019">
+                <div class="film-poster">
+                    <img src="images/films/mount-athos.jpg" alt="Mount Athos" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>Mount Athos</h3>
+                    <span class="film-year">2019</span>
+                    <span class="film-note">Athens Recording Orchestra</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2017">
+                <div class="film-poster">
+                    <img src="images/films/nine-to-five.jpg" alt="Nine to Five" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>Nine to Five</h3>
+                    <span class="film-year">2017</span>
+                    <span class="film-note">Short</span>
+                </div>
+            </article>
+            <article class="film-card" data-year="2016">
+                <div class="film-poster">
+                    <img src="images/films/a-beautiful-day.jpg" alt="A Beautiful Day" onerror="this.src='images/placeholder.svg'">
+                </div>
+                <div class="film-info">
+                    <h3>A Beautiful Day</h3>
+                    <span class="film-year">2016</span>
+                    <span class="film-note">Short</span>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <section class="section solo" id="solo">
+        <h2 class="section-title">Solo</h2>
+
+        <div class="solo-subsection">
+            <h3 class="subsection-title">Of Embla</h3>
+            <p class="subsection-desc">Jazz-folk fusion. A collision of Nordic vocals, Mediterranean textures, and improvisational fire.</p>
+            <div class="video-grid" id="emblaVideos">
+                <!-- YouTube embeds will go here -->
+                <div class="video-placeholder">Videos coming soon</div>
+            </div>
+        </div>
+
+        <div class="solo-subsection">
+            <h3 class="subsection-title">Solo Works</h3>
+            <div class="video-grid" id="soloVideos">
+                <!-- YouTube embeds will go here -->
+                <div class="video-placeholder">Content coming soon</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section about" id="about">
+        <h2 class="section-title">About</h2>
+        <div class="about-content">
+            <p>Nick Athens (b. 1990, Athens, Greece) is a film composer, producer, and multi-instrumentalist. A graduate of the University of Westminster with a Bachelor's in Music Theory and Composition, he combines traditional and experimental techniques to craft unique soundscapes.</p>
+            <p>His filmography includes scores for <em>What Mary Didn't Know</em> (2024) by Konstantina Kotzamani, <em>Light Falls</em> (2024) by Phaedon Papamichail, and <em>Super</em> (2023) by Nikolas Kouloglou. His compositions range from intimate guitar-and-vocal arrangements to experimental modular synth textures, metalophone resonances, and full 60-piece orchestral scores.</p>
+            <p>In <em>Light Falls</em>, trembling violins evoke uncertainty, their delicate tremor mirroring the fragility of the characters' situation. The sweeping main theme becomes a sonic representation of perseverance in the face of overwhelming odds.</p>
+            <p>Beyond film, Nick has composed over 120 pieces for advertising, including international campaigns. In 2022, he collaborated with Google Creative Labs, The City of Athens, and the Hellenic Ministry of Tourism to create curated audio walks using Google Maps.</p>
+            <div class="about-links">
+                <a href="https://www.imdb.com/name/nm8362146/" target="_blank" rel="noopener">IMDB</a>
+                <a href="#" target="_blank" rel="noopener">Spotify</a>
+            </div>
+        </div>
+    </section>
+
+    <section class="section contact" id="contact">
+        <h2 class="section-title">Contact</h2>
+        <div class="contact-content">
+            <p>For scoring inquiries, collaborations, or licensing:</p>
+            <a href="mailto:contact@nickathens.com" class="contact-email">contact@nickathens.com</a>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <span>&copy; 2025 Nick Athens</span>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
