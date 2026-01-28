@@ -233,6 +233,7 @@ function initAudioPlayer() {
     const nextBtn = document.getElementById('audioPlayerNext');
     const closeBtn = document.getElementById('audioPlayerClose');
     const playlistContainer = document.getElementById('audioPlayerPlaylist');
+    const volumeSlider = document.getElementById('audioPlayerVolume');
     const filmCards = document.querySelectorAll('.film-card[data-tracks]');
 
     if (!player || !audio) return;
@@ -240,6 +241,12 @@ function initAudioPlayer() {
     let currentPlaylist = [];
     let currentIndex = 0;
     let isPlaying = false;
+
+    // Set default volume to 50%
+    audio.volume = 0.5;
+    if (volumeSlider) {
+        volumeSlider.value = 50;
+    }
 
     // Format time as m:ss
     function formatTime(seconds) {
@@ -398,6 +405,13 @@ function initAudioPlayer() {
         const percent = (e.clientX - rect.left) / rect.width;
         audio.currentTime = percent * audio.duration;
     });
+
+    // Volume slider
+    if (volumeSlider) {
+        volumeSlider.addEventListener('input', (e) => {
+            audio.volume = e.target.value / 100;
+        });
+    }
 
     // Film card clicks
     filmCards.forEach(card => {

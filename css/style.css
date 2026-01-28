@@ -586,6 +586,51 @@ body {
     height: 32px;
 }
 
+.audio-player-volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-mid);
+}
+
+.audio-player-volume .volume-icon {
+    width: 18px;
+    height: 18px;
+    fill: var(--white);
+    opacity: 0.5;
+}
+
+.audio-player-volume .volume-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--gray-mid);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.audio-player-volume .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: var(--white);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.audio-player-volume .volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: var(--white);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
 .audio-player-playlist {
     max-height: 200px;
     overflow-y: auto;
