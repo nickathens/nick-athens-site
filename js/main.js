@@ -223,6 +223,7 @@ function initAudioPlayer() {
             player.style.display = 'none';
             audio.src = '';
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
         }, 300);
     }
 
@@ -285,14 +286,40 @@ function initAudioPlayer() {
                 return;
             }
 
-            // Remove playing class from all cards
+            // Remove playing class from all cards and embla
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             card.classList.add('playing');
 
             showPlayer(title, tracks);
             audio.play();
         });
     });
+
+    // Embla photo click
+    const emblaPhoto = document.querySelector('.embla-photo');
+    if (emblaPhoto) {
+        emblaPhoto.addEventListener('click', () => {
+            const tracksData = emblaPhoto.dataset.tracks;
+            if (!tracksData) return;
+
+            let tracks;
+            try {
+                tracks = JSON.parse(tracksData);
+            } catch (e) {
+                console.error('Invalid tracks data');
+                return;
+            }
+
+            // Remove playing class from all cards and embla
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            emblaPhoto.classList.add('playing');
+
+            showPlayer('Of Embla', tracks);
+            audio.play();
+        });
+    }
 
     // Expose for external use
     window.audioPlayer = {

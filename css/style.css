@@ -179,10 +179,6 @@ body {
     transition: filter var(--transition);
 }
 
-.film-card:hover .film-poster img {
-    filter: grayscale(0%);
-}
-
 .film-info h3 {
     font-size: 1rem;
     font-weight: 500;
@@ -281,6 +277,10 @@ body {
     margin-bottom: 2rem;
 }
 
+.embla-photo {
+    cursor: pointer;
+}
+
 .embla-photo img {
     max-width: 600px;
     width: 100%;
@@ -288,7 +288,7 @@ body {
     transition: filter var(--transition);
 }
 
-.embla-photo img:hover {
+.embla-photo.playing img {
     filter: grayscale(0%);
 }
 
