@@ -1,4 +1,107 @@
 // Hero Grid Animation
+const tuningNotes = [
+    'audio/tuning/note-a4.mp3',
+    'audio/tuning/note-a4-sharp.mp3',
+    'audio/tuning/note-a4-low.mp3',
+    'audio/tuning/note-a4-high.mp3',
+    'audio/tuning/note-a5.mp3',
+    'audio/tuning/note-b4.mp3',
+    'audio/tuning/note-c3.mp3',
+    'audio/tuning/note-d4.mp3',
+    'audio/tuning/note-e4.mp3',
+    'audio/tuning/note-e5.mp3',
+    'audio/tuning/note-f4.mp3',
+    'audio/tuning/note-g2.mp3',
+    'audio/tuning/note-g3.mp3'
+];
+
+// Color palette for grid cells
+const cellColors = [
+    '#e63946', '#f4a261', '#e9c46a', '#2a9d8f', '#264653',
+    '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4', '#fee440'
+];
+
+// Preloaded audio buffers
+let audioContext = null;
+let tuningBuffers = [];
+let tuningEnabled = true;
+
+// Preload tuning notes
+async function preloadTuningNotes() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+    const loadPromises = tuningNotes.map(async (url) => {
+        try {
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            return await audioContext.decodeAudioData(arrayBuffer);
+        } catch (e) {
+            console.warn('Failed to load tuning note:', url);
+            return null;
+        }
+    });
+
+    tuningBuffers = (await Promise.all(loadPromises)).filter(b => b !== null);
+}
+
+// Play a random tuning note with fade
+function playTuningNote() {
+    if (!tuningEnabled || !audioContext || tuningBuffers.length === 0) return;
+
+    // Resume audio context if suspended (browser autoplay policy)
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
+    const buffer = tuningBuffers[Math.floor(Math.random() * tuningBuffers.length)];
+    const source = audioContext.createBufferSource();
+    const gainNode = audioContext.createGain();
+
+    source.buffer = buffer;
+    source.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    // Start at moderate volume
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+
+    source.start(0);
+
+    // Return duration for color fade sync
+    return buffer.duration;
+}
+
+// Apply color flash to cell that fades out
+function flashCell(cell, duration) {
+    const color = cellColors[Math.floor(Math.random() * cellColors.length)];
+
+    // Store original background
+    const originalBg = cell.classList.contains('off') ? 'transparent' : 'var(--white)';
+    const wasOff = cell.classList.contains('off');
+
+    // Apply color
+    cell.style.backgroundColor = color;
+    cell.style.opacity = '1';
+    if (wasOff) cell.classList.remove('off');
+
+    // Fade back to original over the note duration
+    cell.style.transition = `background-color ${duration}s ease-out, opacity ${duration}s ease-out`;
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            cell.style.backgroundColor = wasOff ? color : originalBg;
+            cell.style.opacity = wasOff ? '0' : '1';
+        });
+    });
+
+    // Reset after animation
+    setTimeout(() => {
+        cell.style.transition = 'opacity 0.5s ease';
+        cell.style.backgroundColor = '';
+        cell.style.opacity = '';
+        if (wasOff) cell.classList.add('off');
+    }, duration * 1000);
+}
+
 function initHeroGrid() {
     const grid = document.getElementById('heroGrid');
     if (!grid) return;
@@ -37,6 +140,14 @@ function initHeroGrid() {
             if (Math.random() > 0.5) {
                 cell.classList.add('off');
             }
+
+            // Add click handler for tuning note
+            cell.addEventListener('click', () => {
+                const duration = playTuningNote();
+                if (duration) {
+                    flashCell(cell, duration);
+                }
+            });
         }
         grid.appendChild(cell);
     }
@@ -56,6 +167,9 @@ function initHeroGrid() {
 
     // Run animation every 300ms
     setInterval(animateCells, 300);
+
+    // Preload tuning notes
+    preloadTuningNotes();
 }
 
 // Mobile Navigation
@@ -202,6 +316,9 @@ function initAudioPlayer() {
 
     // Show player with tracks
     function showPlayer(projectName, tracks) {
+        // Disable grid tuning when music plays
+        tuningEnabled = false;
+
         currentPlaylist = tracks;
         projectEl.textContent = projectName;
         buildPlaylist(tracks);
@@ -225,6 +342,8 @@ function initAudioPlayer() {
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            // Re-enable grid tuning when music stops
+            tuningEnabled = true;
         }, 300);
     }
 
