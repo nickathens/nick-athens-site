@@ -418,12 +418,12 @@ body {
     }
 }
 
-/* Mini Player */
-.mini-player {
+/* Audio Player */
+.audio-player {
     position: fixed;
     bottom: 20px;
     right: 20px;
-    width: 320px;
+    width: 360px;
     background: var(--gray-dark);
     border-radius: 8px;
     overflow: hidden;
@@ -435,45 +435,173 @@ body {
     transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-.mini-player.active {
+.audio-player.active {
     display: block;
     transform: translateY(0);
     opacity: 1;
 }
 
-.mini-player-close {
-    position: absolute;
-    top: 8px;
-    right: 8px;
+.audio-player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--black);
+    border-bottom: 1px solid var(--gray-mid);
+}
+
+.audio-player-project {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0.5;
+}
+
+.audio-player-close {
     width: 24px;
     height: 24px;
-    background: rgba(0, 0, 0, 0.6);
+    background: transparent;
     border: none;
-    border-radius: 50%;
     color: var(--white);
-    font-size: 18px;
+    font-size: 20px;
     line-height: 1;
     cursor: pointer;
-    z-index: 10;
-    transition: background 0.2s ease;
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
 }
 
-.mini-player-close:hover {
-    background: rgba(0, 0, 0, 0.8);
+.audio-player-close:hover {
+    opacity: 1;
 }
 
-.mini-player-title {
-    padding: 12px 16px;
-    font-size: 0.875rem;
+.audio-player-track {
+    padding: 16px;
+}
+
+.audio-player-title {
+    font-size: 1rem;
     font-weight: 500;
-    background: var(--black);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.mini-player iframe {
-    width: 100%;
-    aspect-ratio: 16/9;
+.audio-player-info {
+    font-size: 0.75rem;
+    opacity: 0.5;
+    margin-bottom: 16px;
+}
+
+.audio-player-progress {
+    position: relative;
+    height: 4px;
+    background: var(--gray-mid);
+    border-radius: 2px;
+    cursor: pointer;
+    margin-bottom: 8px;
+}
+
+.audio-player-progress-bar {
+    height: 100%;
+    background: var(--white);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s linear;
+}
+
+.audio-player-progress:hover .audio-player-progress-bar {
+    background: #fff;
+}
+
+.audio-player-times {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.625rem;
+    opacity: 0.4;
+    font-family: monospace;
+    margin-bottom: 16px;
+}
+
+.audio-player-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.audio-player-btn {
+    background: transparent;
     border: none;
-    display: block;
+    color: var(--white);
+    cursor: pointer;
+    padding: 8px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.audio-player-btn:hover {
+    opacity: 1;
+}
+
+.audio-player-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.audio-player-btn.play-btn svg {
+    width: 32px;
+    height: 32px;
+}
+
+.audio-player-playlist {
+    max-height: 200px;
+    overflow-y: auto;
+    border-top: 1px solid var(--gray-mid);
+}
+
+.audio-player-playlist-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    gap: 12px;
+}
+
+.audio-player-playlist-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.audio-player-playlist-item.active {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.audio-player-playlist-num {
+    font-size: 0.75rem;
+    opacity: 0.3;
+    width: 20px;
+    text-align: center;
+}
+
+.audio-player-playlist-item.active .audio-player-playlist-num {
+    opacity: 1;
+}
+
+.audio-player-playlist-name {
+    flex: 1;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.audio-player-playlist-duration {
+    font-size: 0.75rem;
+    opacity: 0.4;
+    font-family: monospace;
 }
 
 /* Active film card (selected) */
@@ -490,9 +618,13 @@ body {
 }
 
 @media (max-width: 480px) {
-    .mini-player {
+    .audio-player {
         width: calc(100% - 40px);
         left: 20px;
         right: 20px;
+    }
+
+    .audio-player-playlist {
+        max-height: 150px;
     }
 }

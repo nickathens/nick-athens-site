@@ -50,7 +50,7 @@
                     <span class="film-year">2024</span>
                 </div>
             </article>
-            <article class="film-card" data-year="2023" data-playlist="OLAK5uy_nvAu9BX99dUtwY-ZrqohxkqywikXyr44Y">
+            <article class="film-card" data-year="2023">
                 <div class="film-poster">
                     <img src="images/films/light-falls.jpg" alt="Light Falls" onerror="this.src='images/placeholder.svg'">
                 </div>
@@ -89,7 +89,7 @@
                     <span class="film-note">Short</span>
                 </div>
             </article>
-            <article class="film-card" data-year="2019" data-playlist="PLh4DLWQqMsc0sZxCLHdWtZZ_nimNoCgqw">
+            <article class="film-card" data-year="2019">
                 <div class="film-poster">
                     <img src="images/films/mount-athos.jpg" alt="Mount Athos" onerror="this.src='images/placeholder.svg'">
                 </div>
@@ -169,12 +169,38 @@
         <span>&copy; 2025 Nick Athens</span>
     </footer>
 
-    <!-- Floating mini player -->
-    <div class="mini-player" id="miniPlayer">
-        <button class="mini-player-close" id="miniPlayerClose">&times;</button>
-        <div class="mini-player-title" id="miniPlayerTitle"></div>
-        <iframe id="miniPlayerFrame" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    <!-- Audio Player -->
+    <div class="audio-player" id="audioPlayer">
+        <div class="audio-player-header">
+            <span class="audio-player-project" id="audioPlayerProject">Film Score</span>
+            <button class="audio-player-close" id="audioPlayerClose">&times;</button>
+        </div>
+        <div class="audio-player-track">
+            <div class="audio-player-title" id="audioPlayerTitle">Track Title</div>
+            <div class="audio-player-info" id="audioPlayerInfo">1 of 10</div>
+            <div class="audio-player-progress" id="audioPlayerProgress">
+                <div class="audio-player-progress-bar" id="audioPlayerProgressBar"></div>
+            </div>
+            <div class="audio-player-times">
+                <span id="audioPlayerCurrent">0:00</span>
+                <span id="audioPlayerDuration">0:00</span>
+            </div>
+            <div class="audio-player-controls">
+                <button class="audio-player-btn prev-btn" id="audioPlayerPrev">
+                    <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button class="audio-player-btn play-btn" id="audioPlayerPlay">
+                    <svg viewBox="0 0 24 24" class="play-icon"><path d="M8 5v14l11-7z"/></svg>
+                    <svg viewBox="0 0 24 24" class="pause-icon" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <button class="audio-player-btn next-btn" id="audioPlayerNext">
+                    <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="audio-player-playlist" id="audioPlayerPlaylist"></div>
     </div>
+    <audio id="audioElement"></audio>
 
     <script src="js/main.js"></script>
 </body>
