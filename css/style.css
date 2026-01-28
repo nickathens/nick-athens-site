@@ -277,6 +277,21 @@ body {
     margin-bottom: 2rem;
 }
 
+.embla-photo {
+    margin-bottom: 2rem;
+}
+
+.embla-photo img {
+    max-width: 600px;
+    width: 100%;
+    filter: grayscale(100%);
+    transition: filter var(--transition);
+}
+
+.embla-photo img:hover {
+    filter: grayscale(0%);
+}
+
 .video-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
