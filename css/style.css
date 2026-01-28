@@ -282,8 +282,7 @@ body {
 .embla-photo img {
     width: 100%;
     height: auto;
-    aspect-ratio: 2/3;
-    object-fit: cover;
+    object-fit: contain;
     filter: grayscale(100%);
     transition: filter var(--transition);
 }
