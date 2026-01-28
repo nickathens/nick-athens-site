@@ -296,18 +296,36 @@ function initAudioPlayer() {
         });
     });
 
-    // Embla photo click
+    // Embla photo click - supports multiple albums with random album selection
     const emblaPhoto = document.querySelector('.embla-photo');
     if (emblaPhoto) {
         emblaPhoto.addEventListener('click', () => {
+            const albumsData = emblaPhoto.dataset.albums;
             const tracksData = emblaPhoto.dataset.tracks;
-            if (!tracksData) return;
 
             let tracks;
-            try {
-                tracks = JSON.parse(tracksData);
-            } catch (e) {
-                console.error('Invalid tracks data');
+            let albumName = 'Of Embla';
+
+            // If albums data exists, pick a random album
+            if (albumsData) {
+                try {
+                    const albums = JSON.parse(albumsData);
+                    const randomAlbum = albums[Math.floor(Math.random() * albums.length)];
+                    tracks = randomAlbum.tracks;
+                    albumName = 'Of Embla - ' + randomAlbum.name;
+                } catch (e) {
+                    console.error('Invalid albums data');
+                    return;
+                }
+            } else if (tracksData) {
+                // Fallback to single tracks list
+                try {
+                    tracks = JSON.parse(tracksData);
+                } catch (e) {
+                    console.error('Invalid tracks data');
+                    return;
+                }
+            } else {
                 return;
             }
 
@@ -316,7 +334,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             emblaPhoto.classList.add('playing');
 
-            showPlayer('Of Embla', tracks);
+            showPlayer(albumName, tracks);
             audio.play();
         });
     }
