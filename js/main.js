@@ -359,6 +359,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
             // Re-enable grid tuning when music stops
             tuningEnabled = true;
         }, 300);
@@ -434,6 +435,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
             card.classList.add('playing');
 
             showPlayer(title, tracks);
@@ -478,6 +480,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
             emblaPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
@@ -518,7 +521,60 @@ function initAudioPlayer() {
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
             athosOstPhoto.classList.add('playing');
+
+            showPlayer(albumName, tracks);
+            audio.play();
+        });
+    }
+
+    // Stone Birds photo click - supports multiple albums with random album selection
+    const stoneBirdsPhoto = document.querySelector('.stone-birds-photo');
+    if (stoneBirdsPhoto) {
+        stoneBirdsPhoto.addEventListener('click', () => {
+            const albumsData = stoneBirdsPhoto.dataset.albums;
+
+            let tracks;
+            let albumName = 'Stone Birds';
+
+            if (albumsData) {
+                try {
+                    const albums = JSON.parse(albumsData);
+                    if (albums.length === 0) {
+                        console.log('No albums yet');
+                        return;
+                    }
+                    const randomAlbum = albums[Math.floor(Math.random() * albums.length)];
+                    tracks = randomAlbum.tracks;
+                    if (albums.length > 1) {
+                        albumName = 'Stone Birds - ' + randomAlbum.name;
+                    }
+                } catch (e) {
+                    console.error('Invalid albums data');
+                    return;
+                }
+            } else {
+                // Fallback to simple tracks data
+                const tracksData = stoneBirdsPhoto.dataset.tracks;
+                if (!tracksData) return;
+                try {
+                    tracks = JSON.parse(tracksData);
+                    if (tracks.length === 0) {
+                        console.log('No tracks yet');
+                        return;
+                    }
+                } catch (e) {
+                    return;
+                }
+            }
+
+            // Remove playing class from all cards and solo photos
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            stoneBirdsPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
             audio.play();
