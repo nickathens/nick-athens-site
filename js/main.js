@@ -23,52 +23,51 @@ const cellColors = [
     '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4', '#fee440'
 ];
 
-// Audio context for synthesized notes
+// Audio context for synthesized notes - initialize once and keep alive
 let audioContext = null;
 let tuningEnabled = true;
 
-// Initialize audio context
-function initAudioContext() {
+// Initialize audio context immediately on first user interaction
+function ensureAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
-}
-
-// Play a random tuning note with fade (synthesized)
-function playTuningNote() {
-    if (!tuningEnabled) return null;
-
-    initAudioContext();
-
-    // Resume audio context if suspended (browser autoplay policy)
     if (audioContext.state === 'suspended') {
         audioContext.resume();
     }
+    return audioContext;
+}
+
+// Play a random tuning note with fade (synthesized) - optimized for responsiveness
+function playTuningNote() {
+    if (!tuningEnabled) return null;
+
+    const ctx = ensureAudioContext();
+    const now = ctx.currentTime;
 
     // Pick a random orchestral tuning frequency
     const frequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
 
     // Create oscillator for the tone
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
 
     // Use sawtooth wave - closer to string instrument timbre
     oscillator.type = 'sawtooth';
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    oscillator.frequency.value = frequency;
 
     // Add slight detune for more organic feel (like strings settling)
-    oscillator.detune.setValueAtTime((Math.random() - 0.5) * 15, audioContext.currentTime);
+    oscillator.detune.value = (Math.random() - 0.5) * 15;
 
     oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(ctx.destination);
 
     // Natural envelope: quick attack, sustain, gradual decay
     const duration = 1.5 + Math.random() * 1; // 1.5-2.5 seconds
-    const now = audioContext.currentTime;
 
+    gainNode.gain.value = 0;
     gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.05); // Quick attack
-    gainNode.gain.setValueAtTime(0.15, now + 0.1); // Brief sustain
+    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02); // Very quick attack
     gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Natural decay
 
     oscillator.start(now);
@@ -83,25 +82,20 @@ function flashCell(cell, duration) {
     const color = cellColors[Math.floor(Math.random() * cellColors.length)];
     const wasOff = cell.classList.contains('off');
 
-    // Immediately show color - no transition for the initial flash
+    // Clear any existing animation
     cell.style.transition = 'none';
     cell.style.backgroundColor = color;
     cell.style.opacity = '1';
     if (wasOff) cell.classList.remove('off');
 
-    // Force reflow to apply the immediate color
-    cell.offsetHeight;
-
-    // Now set up the fade transition
-    cell.style.transition = `background-color ${duration}s ease-out, opacity ${duration}s ease-out`;
-
-    // Fade to transparent/original
-    requestAnimationFrame(() => {
+    // Use setTimeout instead of requestAnimationFrame for more reliable timing
+    setTimeout(() => {
+        cell.style.transition = `background-color ${duration}s ease-out, opacity ${duration}s ease-out`;
         cell.style.backgroundColor = 'transparent';
         if (wasOff) {
             cell.style.opacity = '0';
         }
-    });
+    }, 10);
 
     // Reset after animation completes
     setTimeout(() => {
@@ -109,7 +103,7 @@ function flashCell(cell, duration) {
         cell.style.backgroundColor = '';
         cell.style.opacity = '';
         if (wasOff) cell.classList.add('off');
-    }, duration * 1000);
+    }, duration * 1000 + 50);
 }
 
 function initHeroGrid() {
@@ -151,13 +145,22 @@ function initHeroGrid() {
                 cell.classList.add('off');
             }
 
-            // Add click handler for tuning note
-            cell.addEventListener('click', () => {
+            // Add click handler for tuning note - use mousedown for faster response
+            cell.addEventListener('mousedown', (e) => {
+                e.preventDefault();
                 const duration = playTuningNote();
                 if (duration) {
                     flashCell(cell, duration);
                 }
             });
+            // Also handle touch for mobile
+            cell.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const duration = playTuningNote();
+                if (duration) {
+                    flashCell(cell, duration);
+                }
+            }, { passive: false });
         }
         grid.appendChild(cell);
     }
@@ -535,6 +538,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initMobileNav();
     initSmoothScroll();
     initAudioPlayer();
+
+    // Prime audio context on first interaction for instant response later
+    const primeAudio = () => {
+        ensureAudioContext();
+        document.removeEventListener('mousedown', primeAudio);
+        document.removeEventListener('touchstart', primeAudio);
+    };
+    document.addEventListener('mousedown', primeAudio, { once: true });
+    document.addEventListener('touchstart', primeAudio, { once: true });
 });
 
 // Reinitialize grid on resize
