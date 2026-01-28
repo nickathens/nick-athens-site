@@ -224,6 +224,7 @@ function initAudioPlayer() {
             audio.src = '';
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
         }, 300);
     }
 
@@ -286,9 +287,10 @@ function initAudioPlayer() {
                 return;
             }
 
-            // Remove playing class from all cards and embla
+            // Remove playing class from all cards and solo photos
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             card.classList.add('playing');
 
             showPlayer(title, tracks);
@@ -329,10 +331,51 @@ function initAudioPlayer() {
                 return;
             }
 
-            // Remove playing class from all cards and embla
+            // Remove playing class from all cards and solo photos
             document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             emblaPhoto.classList.add('playing');
+
+            showPlayer(albumName, tracks);
+            audio.play();
+        });
+    }
+
+    // Athos OST photo click - supports multiple albums with random album selection
+    const athosOstPhoto = document.querySelector('.athos-ost-photo');
+    if (athosOstPhoto) {
+        athosOstPhoto.addEventListener('click', () => {
+            const albumsData = athosOstPhoto.dataset.albums;
+
+            let tracks;
+            let albumName = 'Athos OST';
+
+            if (albumsData) {
+                try {
+                    const albums = JSON.parse(albumsData);
+                    if (albums.length === 0) {
+                        console.log('No albums yet');
+                        return;
+                    }
+                    const randomAlbum = albums[Math.floor(Math.random() * albums.length)];
+                    tracks = randomAlbum.tracks;
+                    if (albums.length > 1) {
+                        albumName = 'Athos OST - ' + randomAlbum.name;
+                    }
+                } catch (e) {
+                    console.error('Invalid albums data');
+                    return;
+                }
+            } else {
+                return;
+            }
+
+            // Remove playing class from all cards and solo photos
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            athosOstPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
             audio.play();
