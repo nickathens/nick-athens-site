@@ -1,18 +1,20 @@
 // Hero Grid Animation
-const tuningNotes = [
-    'audio/tuning/note-a4.mp3',
-    'audio/tuning/note-a4-sharp.mp3',
-    'audio/tuning/note-a4-low.mp3',
-    'audio/tuning/note-a4-high.mp3',
-    'audio/tuning/note-a5.mp3',
-    'audio/tuning/note-b4.mp3',
-    'audio/tuning/note-c3.mp3',
-    'audio/tuning/note-d4.mp3',
-    'audio/tuning/note-e4.mp3',
-    'audio/tuning/note-e5.mp3',
-    'audio/tuning/note-f4.mp3',
-    'audio/tuning/note-g2.mp3',
-    'audio/tuning/note-g3.mp3'
+
+// Orchestral tuning frequencies - the actual notes you hear during tuning
+// A440 is the reference, plus open string pitches for violin, viola, cello, bass
+const tuningFrequencies = [
+    440,    // A4 - concert pitch (oboe gives this)
+    440,    // A4 - doubled for frequency since it's the main tuning note
+    220,    // A3 - viola/cello A string
+    110,    // A2 - double bass A string
+    293.66, // D4 - violin D string
+    146.83, // D3 - viola/cello D string
+    196,    // G3 - violin/viola G string
+    98,     // G2 - cello G string
+    659.25, // E5 - violin E string
+    329.63, // E4 - higher register tuning
+    87.31,  // F2 - bass low notes
+    65.41   // C2 - bass low C
 ];
 
 // Color palette for grid cells
@@ -21,53 +23,59 @@ const cellColors = [
     '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4', '#fee440'
 ];
 
-// Preloaded audio buffers
+// Audio context for synthesized notes
 let audioContext = null;
-let tuningBuffers = [];
 let tuningEnabled = true;
 
-// Preload tuning notes
-async function preloadTuningNotes() {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-    const loadPromises = tuningNotes.map(async (url) => {
-        try {
-            const response = await fetch(url);
-            const arrayBuffer = await response.arrayBuffer();
-            return await audioContext.decodeAudioData(arrayBuffer);
-        } catch (e) {
-            console.warn('Failed to load tuning note:', url);
-            return null;
-        }
-    });
-
-    tuningBuffers = (await Promise.all(loadPromises)).filter(b => b !== null);
+// Initialize audio context
+function initAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
 }
 
-// Play a random tuning note with fade
+// Play a random tuning note with fade (synthesized)
 function playTuningNote() {
-    if (!tuningEnabled || !audioContext || tuningBuffers.length === 0) return;
+    if (!tuningEnabled) return;
+
+    initAudioContext();
 
     // Resume audio context if suspended (browser autoplay policy)
     if (audioContext.state === 'suspended') {
         audioContext.resume();
     }
 
-    const buffer = tuningBuffers[Math.floor(Math.random() * tuningBuffers.length)];
-    const source = audioContext.createBufferSource();
+    // Pick a random orchestral tuning frequency
+    const frequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
+
+    // Create oscillator for the tone
+    const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
 
-    source.buffer = buffer;
-    source.connect(gainNode);
+    // Use sawtooth wave - closer to string instrument timbre
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+    // Add slight detune for more organic feel (like strings settling)
+    oscillator.detune.setValueAtTime((Math.random() - 0.5) * 15, audioContext.currentTime);
+
+    oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    // Start at moderate volume
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    // Natural envelope: quick attack, sustain, gradual decay
+    const duration = 1.5 + Math.random() * 1; // 1.5-2.5 seconds
+    const now = audioContext.currentTime;
 
-    source.start(0);
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.05); // Quick attack
+    gainNode.gain.setValueAtTime(0.15, now + 0.1); // Brief sustain
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Natural decay
+
+    oscillator.start(now);
+    oscillator.stop(now + duration);
 
     // Return duration for color fade sync
-    return buffer.duration;
+    return duration;
 }
 
 // Apply color flash to cell that fades out
