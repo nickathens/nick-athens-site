@@ -275,15 +275,15 @@ body {
 
 .embla-photo {
     margin-bottom: 2rem;
-}
-
-.embla-photo {
+    width: 280px;
     cursor: pointer;
 }
 
 .embla-photo img {
-    max-width: 600px;
     width: 100%;
+    height: auto;
+    aspect-ratio: 2/3;
+    object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
 }
