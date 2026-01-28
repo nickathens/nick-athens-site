@@ -118,6 +118,8 @@ body {
     align-items: center;
     justify-content: center;
     padding: 5%;
+    /* Override parent's opacity */
+    filter: brightness(2.5);
 }
 
 .hero-grid .cell.logo-cell .logo-img {
