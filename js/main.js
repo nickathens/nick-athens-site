@@ -64,9 +64,9 @@ function playTuningNote(cell) {
     // Add slight detune for more organic feel (like strings settling)
     oscillator.detune.value = (Math.random() - 0.5) * 15;
 
-    // Low-pass filter starts open
+    // Low-pass filter starts partially closed for modulation range
     filter.type = 'lowpass';
-    filter.frequency.value = 8000;
+    filter.frequency.value = 1000;
     filter.Q.value = 1;
 
     // Chain: oscillator -> filter -> gain -> output
@@ -111,15 +111,28 @@ function playTuningNote(cell) {
     return note;
 }
 
-// Update filter based on hold time (longer hold = lower cutoff)
-function updateFilterForHold(note, holdTime) {
+// Update filter based on vertical drag (down = close to 200Hz, up = open to 8000Hz)
+function updateFilterForDrag(note, deltaY) {
     if (!note || !note.filter) return;
 
-    // Map hold time to filter cutoff: 0ms = 8000Hz, 1000ms+ = 200Hz
-    const maxHoldTime = 1000;
-    const progress = Math.min(holdTime / maxHoldTime, 1);
-    // Exponential curve for more musical feel
-    const cutoff = 8000 * Math.pow(200 / 8000, progress);
+    // Drag down (positive deltaY) closes filter to 200Hz
+    // Drag up (negative deltaY) opens filter to 8000Hz
+    // 100px = full range in either direction
+    const baseCutoff = 1000;
+    const minCutoff = 200;
+    const maxCutoff = 8000;
+
+    // Normalize: -1 (full up) to +1 (full down)
+    const normalized = Math.max(-1, Math.min(1, deltaY / 100));
+
+    let cutoff;
+    if (normalized > 0) {
+        // Dragging down - close filter (1000 -> 200)
+        cutoff = baseCutoff * Math.pow(minCutoff / baseCutoff, normalized);
+    } else {
+        // Dragging up - open filter (1000 -> 8000)
+        cutoff = baseCutoff * Math.pow(maxCutoff / baseCutoff, -normalized);
+    }
 
     note.filter.frequency.setTargetAtTime(cutoff, note.filter.context.currentTime, 0.05);
 }
@@ -228,8 +241,7 @@ function initHeroGrid() {
             }
 
             // Track interaction state for modulation
-            let holdInterval = null;
-            let holdStartTime = null;
+            let isHolding = false;
 
             function startNote(e, clientX, clientY) {
                 e.preventDefault();
@@ -237,37 +249,29 @@ function initHeroGrid() {
                 if (note) {
                     note.startX = clientX;
                     note.startY = clientY;
-                    holdStartTime = Date.now();
+                    isHolding = true;
                     flashCell(cell, note.duration);
-
-                    // Update filter based on hold time
-                    holdInterval = setInterval(() => {
-                        const holdTime = Date.now() - holdStartTime;
-                        updateFilterForHold(note, holdTime);
-                    }, 16); // ~60fps
                 }
             }
 
-            function updateNote(clientX) {
+            function updateNote(clientX, clientY) {
                 const note = activeNotes.get(cell);
                 if (note && note.startX !== null) {
                     const deltaX = clientX - note.startX;
+                    const deltaY = clientY - note.startY;
                     updatePitchForDrag(note, deltaX);
+                    updateFilterForDrag(note, deltaY);
                 }
             }
 
             function endNote() {
-                if (holdInterval) {
-                    clearInterval(holdInterval);
-                    holdInterval = null;
-                }
                 // Fade out the note when released
                 const note = activeNotes.get(cell);
                 if (note) {
                     releaseNote(note);
                     activeNotes.delete(cell);
                 }
-                holdStartTime = null;
+                isHolding = false;
             }
 
             // Mouse events
@@ -276,8 +280,8 @@ function initHeroGrid() {
             });
 
             cell.addEventListener('mousemove', (e) => {
-                if (holdStartTime !== null) {
-                    updateNote(e.clientX);
+                if (isHolding) {
+                    updateNote(e.clientX, e.clientY);
                 }
             });
 
@@ -291,9 +295,9 @@ function initHeroGrid() {
             }, { passive: false });
 
             cell.addEventListener('touchmove', (e) => {
-                if (holdStartTime !== null) {
+                if (isHolding) {
                     const touch = e.touches[0];
-                    updateNote(touch.clientX);
+                    updateNote(touch.clientX, touch.clientY);
                 }
             }, { passive: false });
 
