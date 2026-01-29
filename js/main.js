@@ -196,10 +196,32 @@ function stopAllNotes() {
     activeNotes.forEach((note, cell) => {
         if (!note.released) {
             releaseNote(note);
-            fadeCell(cell, 2.5);
+            fadeCell(cell, 0.5); // Quick fade for emergency cleanup
+        }
+        // Also cleanup any lingering event handlers
+        if (cell._cleanupHandlers) {
+            cell._cleanupHandlers();
         }
     });
 }
+
+// Periodic cleanup - catch any orphaned notes every 5 seconds
+setInterval(() => {
+    if (audioContext) {
+        const now = audioContext.currentTime;
+        activeNotes.forEach((note, cell) => {
+            // If a note has been playing for more than 15 seconds without interaction, kill it
+            if (!note.released && (now - note.startTime) > 15) {
+                console.log('Periodic cleanup: releasing orphaned note');
+                releaseNote(note);
+                fadeCell(cell, 0.5);
+                if (cell._cleanupHandlers) {
+                    cell._cleanupHandlers();
+                }
+            }
+        });
+    }
+}, 5000);
 
 // Convert hex to HSL
 function hexToHsl(hex) {
@@ -342,16 +364,24 @@ function initHeroGrid() {
                 cell.classList.add('off');
             }
 
-            // Track interaction state for modulation
-            let isHolding = false;
+            // Unique ID for this cell's interaction tracking
+            const cellId = i;
 
             function startNote(e, clientX, clientY) {
                 e.preventDefault();
+
+                // If there's already a note playing on this cell, release it first
+                const existingNote = activeNotes.get(cell);
+                if (existingNote && !existingNote.released) {
+                    releaseNote(existingNote);
+                    fadeCell(cell, 0.1); // Quick fade for the old note
+                }
+
                 const note = playTuningNote(cell);
                 if (note) {
                     note.startX = clientX;
                     note.startY = clientY;
-                    isHolding = true;
+                    note.cellId = cellId;
                     activateCell(cell);
                 }
             }
@@ -368,31 +398,44 @@ function initHeroGrid() {
             }
 
             function endNote() {
-                // Fade out the note when released
                 const note = activeNotes.get(cell);
                 if (note && !note.released) {
                     const fadeTime = releaseNote(note);
                     fadeCell(cell, fadeTime);
                 }
-                isHolding = false;
             }
+
+            // Store handlers on the cell element so we can clean them up
+            cell._cleanupHandlers = null;
 
             // Mouse events - start on cell, track on document for full-screen drag
             cell.addEventListener('mousedown', (e) => {
+                // Clean up any previous handlers that weren't properly removed
+                if (cell._cleanupHandlers) {
+                    cell._cleanupHandlers();
+                }
+
                 startNote(e, e.clientX, e.clientY);
 
-                // Move and up handlers on document so drag works anywhere
                 function onMouseMove(moveEvent) {
-                    if (isHolding) {
+                    const note = activeNotes.get(cell);
+                    if (note && !note.released) {
                         updateNote(moveEvent.clientX, moveEvent.clientY);
                     }
                 }
 
                 function onMouseUp() {
                     endNote();
+                    cleanup();
+                }
+
+                function cleanup() {
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+                    cell._cleanupHandlers = null;
                 }
+
+                cell._cleanupHandlers = cleanup;
 
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
@@ -400,23 +443,59 @@ function initHeroGrid() {
 
             // Touch events - start on cell, track on document for full-screen drag
             cell.addEventListener('touchstart', (e) => {
+                // Clean up any previous handlers that weren't properly removed
+                if (cell._cleanupHandlers) {
+                    cell._cleanupHandlers();
+                }
+
                 const touch = e.touches[0];
                 startNote(e, touch.clientX, touch.clientY);
 
-                // Move and end handlers on document so drag works anywhere
+                // Track the touch identifier so we only respond to our touch
+                const touchId = touch.identifier;
+
                 function onTouchMove(moveEvent) {
-                    if (isHolding && moveEvent.touches.length > 0) {
-                        const touch = moveEvent.touches[0];
-                        updateNote(touch.clientX, touch.clientY);
+                    // Find our specific touch
+                    let ourTouch = null;
+                    for (let i = 0; i < moveEvent.touches.length; i++) {
+                        if (moveEvent.touches[i].identifier === touchId) {
+                            ourTouch = moveEvent.touches[i];
+                            break;
+                        }
+                    }
+
+                    if (ourTouch) {
+                        const note = activeNotes.get(cell);
+                        if (note && !note.released) {
+                            updateNote(ourTouch.clientX, ourTouch.clientY);
+                        }
                     }
                 }
 
-                function onTouchEnd() {
-                    endNote();
+                function onTouchEnd(endEvent) {
+                    // Check if our specific touch ended
+                    let ourTouchEnded = true;
+                    for (let i = 0; i < endEvent.touches.length; i++) {
+                        if (endEvent.touches[i].identifier === touchId) {
+                            ourTouchEnded = false;
+                            break;
+                        }
+                    }
+
+                    if (ourTouchEnded) {
+                        endNote();
+                        cleanup();
+                    }
+                }
+
+                function cleanup() {
                     document.removeEventListener('touchmove', onTouchMove);
                     document.removeEventListener('touchend', onTouchEnd);
                     document.removeEventListener('touchcancel', onTouchEnd);
+                    cell._cleanupHandlers = null;
                 }
+
+                cell._cleanupHandlers = cleanup;
 
                 document.addEventListener('touchmove', onTouchMove, { passive: false });
                 document.addEventListener('touchend', onTouchEnd);
