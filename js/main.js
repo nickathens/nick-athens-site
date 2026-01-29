@@ -131,12 +131,9 @@ function getSmartIntervals(baseFreq) {
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
 
-// Global tracking for mouse/touch state to prevent stuck notes
-let globalMouseDown = false;
-let globalTouchActive = new Set(); // Track active touch identifiers
-
-// Safety timeout - kill any note after 30 seconds max (prevents infinite drones)
-const MAX_NOTE_DURATION = 30000;
+// Track which pointer (mouse or touch) is currently controlling each cell
+// Key: cell element, Value: { pointerId, startX, startY }
+const activePointers = new Map();
 
 // Initialize audio context immediately on first user interaction
 function ensureAudioContext() {
@@ -222,20 +219,10 @@ function playTuningNote(cell) {
         startY: null,
         cell: cell,
         released: false,
-        safetyTimeout: null,
         // Keep single-note compatibility
         get oscillator() { return this.oscillators[0]; },
         get filter() { return this.filters[0]; }
     };
-
-    // Safety timeout - force release after MAX_NOTE_DURATION to prevent infinite drones
-    note.safetyTimeout = setTimeout(() => {
-        if (!note.released) {
-            console.log('Safety timeout: forcing note release');
-            releaseNote(note);
-            fadeCell(cell, 2.5);
-        }
-    }, MAX_NOTE_DURATION);
 
     // Track this note
     activeNotes.set(cell, note);
@@ -297,12 +284,6 @@ function releaseNote(note) {
     if (!note || !note.gainNode || note.released) return;
     note.released = true;
 
-    // Clear safety timeout since we're releasing properly
-    if (note.safetyTimeout) {
-        clearTimeout(note.safetyTimeout);
-        note.safetyTimeout = null;
-    }
-
     const ctx = note.gainNode.context;
     const now = ctx.currentTime;
     const fadeTime = 2.5;
@@ -343,31 +324,9 @@ function stopAllNotes() {
             releaseNote(note);
             fadeCell(cell, 0.5); // Quick fade for emergency cleanup
         }
-        // Also cleanup any lingering event handlers
-        if (cell._cleanupHandlers) {
-            cell._cleanupHandlers();
-        }
     });
+    activePointers.clear();
 }
-
-// Periodic cleanup - catch any orphaned notes every 2 seconds (more aggressive)
-setInterval(() => {
-    if (audioContext) {
-        const now = audioContext.currentTime;
-        activeNotes.forEach((note, cell) => {
-            // If a note has been playing for more than 10 seconds without interaction, kill it
-            if (!note.released && (now - note.startTime) > 10) {
-                console.log('Periodic cleanup: releasing orphaned note');
-                globalMouseDown = false;
-                releaseNote(note);
-                fadeCell(cell, 0.5);
-                if (cell._cleanupHandlers) {
-                    cell._cleanupHandlers();
-                }
-            }
-        });
-    }
-}, 2000);
 
 // Convert hex to HSL
 function hexToHsl(hex) {
@@ -510,40 +469,66 @@ function initHeroGrid() {
                 cell.classList.add('off');
             }
 
-            // Unique ID for this cell's interaction tracking
-            const cellId = i;
-
-            function startNote(e, clientX, clientY) {
+            // Use Pointer Events API - unifies mouse and touch with simpler handling
+            cell.addEventListener('pointerdown', (e) => {
+                // Only respond to primary button (left mouse or touch)
+                if (e.button !== 0) return;
                 e.preventDefault();
+
+                // Capture pointer to this cell - this ensures we get all events
+                // even when pointer moves outside the element
+                cell.setPointerCapture(e.pointerId);
 
                 // If there's already a note playing on this cell, release it first
                 const existingNote = activeNotes.get(cell);
                 if (existingNote && !existingNote.released) {
                     releaseNote(existingNote);
-                    fadeCell(cell, 0.1); // Quick fade for the old note
+                    fadeCell(cell, 0.1);
                 }
 
+                // Track this pointer
+                activePointers.set(cell, {
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startY: e.clientY
+                });
+
+                // Play note
                 const note = playTuningNote(cell);
                 if (note) {
-                    note.startX = clientX;
-                    note.startY = clientY;
-                    note.cellId = cellId;
+                    note.startX = e.clientX;
+                    note.startY = e.clientY;
                     activateCell(cell);
                 }
-            }
+            });
 
-            function updateNote(clientX, clientY) {
+            cell.addEventListener('pointermove', (e) => {
+                const pointer = activePointers.get(cell);
+                if (!pointer || pointer.pointerId !== e.pointerId) return;
+
                 const note = activeNotes.get(cell);
-                if (note && note.startX !== null && !note.released) {
-                    const deltaX = clientX - note.startX;
-                    const deltaY = clientY - note.startY;
+                if (note && !note.released && note.startX !== null) {
+                    const deltaX = e.clientX - note.startX;
+                    const deltaY = e.clientY - note.startY;
                     updatePitchForDrag(note, deltaX);
                     updateFilterForDrag(note, deltaY);
                     updateCellColor(cell, deltaX, deltaY);
                 }
-            }
+            });
 
-            function endNote() {
+            function releaseCell(e) {
+                const pointer = activePointers.get(cell);
+                if (!pointer || pointer.pointerId !== e.pointerId) return;
+
+                activePointers.delete(cell);
+
+                // Release pointer capture
+                try {
+                    cell.releasePointerCapture(e.pointerId);
+                } catch (err) {
+                    // Already released
+                }
+
                 const note = activeNotes.get(cell);
                 if (note && !note.released) {
                     const fadeTime = releaseNote(note);
@@ -551,150 +536,26 @@ function initHeroGrid() {
                 }
             }
 
-            // Store handlers on the cell element so we can clean them up
-            cell._cleanupHandlers = null;
+            cell.addEventListener('pointerup', releaseCell);
+            cell.addEventListener('pointercancel', releaseCell);
 
-            // Mouse events - start on cell, track on document for full-screen drag
-            cell.addEventListener('mousedown', (e) => {
-                // Only respond to left mouse button (button 0)
-                if (e.button !== 0) return;
-
-                // Set global mouse state
-                globalMouseDown = true;
-
-                // Clean up any previous handlers that weren't properly removed
-                if (cell._cleanupHandlers) {
-                    cell._cleanupHandlers();
-                }
-
-                startNote(e, e.clientX, e.clientY);
-
-                function onMouseMove(moveEvent) {
-                    // Safety check - if mouse isn't actually down, release
-                    if (!globalMouseDown || (moveEvent.buttons & 1) === 0) {
-                        endNote();
-                        cleanup();
-                        return;
-                    }
+            // Prevent context menu on the cell
+            cell.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                // Also release any active note on right-click
+                const pointer = activePointers.get(cell);
+                if (pointer) {
+                    activePointers.delete(cell);
                     const note = activeNotes.get(cell);
                     if (note && !note.released) {
-                        updateNote(moveEvent.clientX, moveEvent.clientY);
+                        const fadeTime = releaseNote(note);
+                        fadeCell(cell, fadeTime);
                     }
                 }
-
-                function onMouseUp(upEvent) {
-                    globalMouseDown = false;
-                    endNote();
-                    cleanup();
-                }
-
-                function cleanup() {
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                    document.removeEventListener('mouseleave', onMouseLeave);
-                    document.removeEventListener('contextmenu', onContextMenu);
-                    cell._cleanupHandlers = null;
-                }
-
-                // Release if mouse leaves the document entirely
-                function onMouseLeave(leaveEvent) {
-                    // Only if actually leaving the document (not entering a child)
-                    if (leaveEvent.relatedTarget === null) {
-                        globalMouseDown = false;
-                        endNote();
-                        cleanup();
-                    }
-                }
-
-                // Also release on right-click context menu
-                function onContextMenu() {
-                    globalMouseDown = false;
-                    endNote();
-                    cleanup();
-                }
-
-                cell._cleanupHandlers = cleanup;
-
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-                document.addEventListener('mouseleave', onMouseLeave);
-                document.addEventListener('contextmenu', onContextMenu);
             });
 
-            // Touch events - start on cell, track on document for full-screen drag
-            cell.addEventListener('touchstart', (e) => {
-                // Clean up any previous handlers that weren't properly removed
-                if (cell._cleanupHandlers) {
-                    cell._cleanupHandlers();
-                }
-
-                const touch = e.touches[0];
-                startNote(e, touch.clientX, touch.clientY);
-
-                // Track the touch identifier so we only respond to our touch
-                const touchId = touch.identifier;
-                globalTouchActive.add(touchId);
-
-                function onTouchMove(moveEvent) {
-                    // Safety check - if our touch isn't in global tracking, something went wrong
-                    if (!globalTouchActive.has(touchId)) {
-                        endNote();
-                        cleanup();
-                        return;
-                    }
-
-                    // Find our specific touch
-                    let ourTouch = null;
-                    for (let i = 0; i < moveEvent.touches.length; i++) {
-                        if (moveEvent.touches[i].identifier === touchId) {
-                            ourTouch = moveEvent.touches[i];
-                            break;
-                        }
-                    }
-
-                    if (ourTouch) {
-                        const note = activeNotes.get(cell);
-                        if (note && !note.released) {
-                            updateNote(ourTouch.clientX, ourTouch.clientY);
-                        }
-                    } else {
-                        // Our touch is gone but touchend didn't fire - clean up
-                        endNote();
-                        cleanup();
-                    }
-                }
-
-                function onTouchEnd(endEvent) {
-                    // Check if our specific touch ended
-                    let ourTouchEnded = true;
-                    for (let i = 0; i < endEvent.touches.length; i++) {
-                        if (endEvent.touches[i].identifier === touchId) {
-                            ourTouchEnded = false;
-                            break;
-                        }
-                    }
-
-                    if (ourTouchEnded) {
-                        globalTouchActive.delete(touchId);
-                        endNote();
-                        cleanup();
-                    }
-                }
-
-                function cleanup() {
-                    globalTouchActive.delete(touchId);
-                    document.removeEventListener('touchmove', onTouchMove);
-                    document.removeEventListener('touchend', onTouchEnd);
-                    document.removeEventListener('touchcancel', onTouchEnd);
-                    cell._cleanupHandlers = null;
-                }
-
-                cell._cleanupHandlers = cleanup;
-
-                document.addEventListener('touchmove', onTouchMove, { passive: false });
-                document.addEventListener('touchend', onTouchEnd);
-                document.addEventListener('touchcancel', onTouchEnd);
-            }, { passive: false });
+            // Disable touch-action for smoother dragging
+            cell.style.touchAction = 'none';
         }
         grid.appendChild(cell);
     }
@@ -1254,39 +1115,3 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('blur', () => {
     stopAllNotes();
 });
-
-// Prevent right-click from causing stuck notes on the grid
-document.addEventListener('contextmenu', (e) => {
-    // If right-clicking on or near the grid, release all notes
-    const grid = document.getElementById('heroGrid');
-    if (grid && grid.contains(e.target)) {
-        globalMouseDown = false;
-        stopAllNotes();
-    }
-});
-
-// Global mouseup handler - catches any missed mouseup events
-document.addEventListener('mouseup', () => {
-    globalMouseDown = false;
-});
-
-// Periodically check for stuck interaction states (every 500ms)
-setInterval(() => {
-    // If globalMouseDown is true but no mouse buttons are pressed, reset
-    // This catches edge cases where mouseup was missed
-    if (globalMouseDown) {
-        // We can't directly check mouse state, but if there are notes playing
-        // and no active touch events, check with a heuristic
-        if (activeNotes.size > 0 && globalTouchActive.size === 0) {
-            // If any notes have been playing for more than 5 seconds without
-            // any cleanup handlers attached, they're likely stuck
-            activeNotes.forEach((note, cell) => {
-                if (!note.released && !cell._cleanupHandlers) {
-                    console.log('Detected orphaned note, releasing');
-                    releaseNote(note);
-                    fadeCell(cell, 0.5);
-                }
-            });
-        }
-    }
-}, 500);
