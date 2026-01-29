@@ -1,20 +1,43 @@
 // Hero Grid Animation
 
-// Orchestral tuning frequencies - the actual notes you hear during tuning
-// A440 is the reference, plus open string pitches for violin, viola, cello, bass
+// Full chromatic scale frequencies across octaves (C2 to C6)
+// More notes = more variation when Smart Harmony is on
 const tuningFrequencies = [
-    440,    // A4 - concert pitch (oboe gives this)
-    440,    // A4 - doubled for frequency since it's the main tuning note
-    220,    // A3 - viola/cello A string
-    110,    // A2 - double bass A string
-    293.66, // D4 - violin D string
-    146.83, // D3 - viola/cello D string
-    196,    // G3 - violin/viola G string
-    98,     // G2 - cello G string
-    659.25, // E5 - violin E string
-    329.63, // E4 - higher register tuning
-    87.31,  // F2 - bass low notes
-    65.41   // C2 - bass low C
+    // C notes
+    65.41,   // C2
+    130.81,  // C3
+    261.63,  // C4 (middle C)
+    523.25,  // C5
+    // D notes
+    73.42,   // D2
+    146.83,  // D3
+    293.66,  // D4
+    587.33,  // D5
+    // E notes
+    82.41,   // E2
+    164.81,  // E3
+    329.63,  // E4
+    659.25,  // E5
+    // F notes
+    87.31,   // F2
+    174.61,  // F3
+    349.23,  // F4
+    698.46,  // F5
+    // G notes
+    98.00,   // G2
+    196.00,  // G3
+    392.00,  // G4
+    783.99,  // G5
+    // A notes
+    110.00,  // A2
+    220.00,  // A3
+    440.00,  // A4 (concert pitch)
+    880.00,  // A5
+    // B notes
+    123.47,  // B2
+    246.94,  // B3
+    493.88,  // B4
+    987.77   // B5
 ];
 
 // Color palette for grid cells
@@ -30,54 +53,79 @@ let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
 
 // Smart Harmony System
-// Based on the circle of fifths - all notes derived from A (440Hz)
-// The harmonic "family" of notes that sound good together in orchestral tuning context
-const harmonicFamily = {
-    // Note name -> frequency ratios that work well with it
-    // Using Pythagorean tuning (stacked perfect fifths)
-    'A': { base: 440, fifthUp: 660, fifthDown: 293.33, octaveUp: 880, octaveDown: 220 },
-    'E': { base: 330, fifthUp: 495, fifthDown: 220, octaveUp: 660, octaveDown: 165 },
-    'D': { base: 293.66, fifthUp: 440, fifthDown: 196, octaveUp: 587.33, octaveDown: 146.83 },
-    'G': { base: 196, fifthUp: 293.66, fifthDown: 130.81, octaveUp: 392, octaveDown: 98 }
+// Extended chromatic approach with varied voicings
+// All intervals in cents (100 cents = 1 semitone)
+
+// Note name reference frequencies (octave 4)
+const noteFreqRef = {
+    'C': 261.63, 'D': 293.66, 'E': 329.63, 'F': 349.23,
+    'G': 392.00, 'A': 440.00, 'B': 493.88
 };
 
-// Convert frequency to nearest note in the circle of fifths
+// All available voicings - from sparse to dense
+const voicingOptions = [
+    // Single notes (weight: common when already dense)
+    { intervals: [0], weight: 2 },
+    // Octave only (weight: medium)
+    { intervals: [0, 1200], weight: 3 },
+    // Open 5th (classic orchestral)
+    { intervals: [0, 700], weight: 4 },
+    // Power chord
+    { intervals: [0, 700, 1200], weight: 3 },
+    // Suspended (no 3rd - ambiguous)
+    { intervals: [0, 500, 700], weight: 2 },
+    // Open with 9th
+    { intervals: [0, 700, 1400], weight: 2 },
+    // Stacked 5ths (medieval/modal)
+    { intervals: [0, 700, 1400, 2100], weight: 1 },
+    // Wide spread (orchestral tutti)
+    { intervals: [0, -1200, 700, 1200], weight: 1 },
+    // Cluster (dissonant, rare)
+    { intervals: [0, 200, 400], weight: 0.5 },
+    // Minor feel (for variety)
+    { intervals: [0, 300, 700], weight: 1 },
+    // Major feel (for variety)
+    { intervals: [0, 400, 700], weight: 1 }
+];
+
+// Convert frequency to note name
 function frequencyToNote(freq) {
-    // Normalize to octave 4 range (220-440 Hz equivalent)
+    // Normalize to octave 4
     let normalized = freq;
     while (normalized < 200) normalized *= 2;
     while (normalized > 500) normalized /= 2;
 
-    // Find closest note
-    const notes = [
-        { name: 'A', freq: 440 },
-        { name: 'E', freq: 330 },
-        { name: 'D', freq: 293.66 },
-        { name: 'G', freq: 196 * 2 } // G in octave 4
-    ];
+    let closest = 'A';
+    let minDiff = Infinity;
 
-    let closest = notes[0];
-    let minDiff = Math.abs(normalized - notes[0].freq);
-
-    for (const note of notes) {
-        const diff = Math.abs(normalized - note.freq);
+    for (const [name, refFreq] of Object.entries(noteFreqRef)) {
+        const diff = Math.abs(normalized - refFreq);
         if (diff < minDiff) {
             minDiff = diff;
-            closest = note;
+            closest = name;
         }
     }
-
-    return closest.name;
+    return closest;
 }
 
-// Get harmonically compatible intervals based on what's already playing
-function getSmartIntervals(baseFreq) {
-    // If nothing is playing, return open fifth (orchestral default)
-    if (activeNotes.size === 0) {
-        return [0, 700]; // Root + perfect fifth
-    }
+// Circle of fifths for relationship detection
+const circleOfFifths = ['C', 'G', 'D', 'A', 'E', 'B', 'F'];
 
-    // Analyze currently playing notes
+// Check harmonic relationship between two notes
+function getHarmonicRelation(note1, note2) {
+    const idx1 = circleOfFifths.indexOf(note1);
+    const idx2 = circleOfFifths.indexOf(note2);
+    if (idx1 === -1 || idx2 === -1) return 'unrelated';
+
+    const distance = Math.abs(idx1 - idx2);
+    if (distance === 0) return 'same';
+    if (distance === 1 || distance === 6) return 'fifth'; // Adjacent in circle
+    if (distance === 2 || distance === 5) return 'close'; // Two steps
+    return 'distant';
+}
+
+// Get weighted random voicing based on context
+function getSmartIntervals(baseFreq) {
     const playingFreqs = [];
     activeNotes.forEach(note => {
         if (!note.released) {
@@ -85,47 +133,58 @@ function getSmartIntervals(baseFreq) {
         }
     });
 
-    if (playingFreqs.length === 0) {
-        return [0, 700];
-    }
-
-    // Get the note names of what's playing
-    const playingNotes = playingFreqs.map(f => frequencyToNote(f));
+    const playingCount = playingFreqs.length;
     const newNote = frequencyToNote(baseFreq);
 
-    // Determine the harmonic relationship
-    // If the new note is a fifth away from existing notes, add octave for richness
-    // If it's the same note family, add fifth + octave for power
-    // If it's in the family but different, keep it open (just fifth)
-
-    const sameFamily = playingNotes.includes(newNote);
-
-    // Check if any playing note forms a fifth relationship with new note
-    const fifthRelations = {
-        'A': ['E', 'D'],
-        'E': ['A', 'B'],
-        'D': ['A', 'G'],
-        'G': ['D', 'C']
-    };
-
-    const hasFifthRelation = playingNotes.some(n =>
-        fifthRelations[newNote] && fifthRelations[newNote].includes(n)
-    );
-
-    // Build chord based on context
-    if (playingFreqs.length >= 3) {
-        // Already complex, keep new note simple for clarity
-        return [0]; // Single note
-    } else if (sameFamily) {
-        // Same note family - add power chord for thickness
-        return [0, 700, 1200]; // Root + 5th + octave
-    } else if (hasFifthRelation) {
-        // Fifth relationship - beautiful stacking, add ninth
-        return [0, 700, 1400]; // Root + 5th + 9th
-    } else {
-        // Different but compatible - open voicing
-        return [0, 700]; // Root + 5th
+    // Analyze relationships with playing notes
+    let relationshipScore = 0;
+    if (playingCount > 0) {
+        const playingNotes = playingFreqs.map(f => frequencyToNote(f));
+        playingNotes.forEach(pn => {
+            const rel = getHarmonicRelation(newNote, pn);
+            if (rel === 'same') relationshipScore += 3;
+            else if (rel === 'fifth') relationshipScore += 2;
+            else if (rel === 'close') relationshipScore += 1;
+        });
     }
+
+    // Build weighted list based on context
+    const weightedOptions = voicingOptions.map(opt => {
+        let weight = opt.weight;
+        const noteCount = opt.intervals.length;
+
+        // More notes playing = prefer sparser voicings
+        if (playingCount >= 3) {
+            weight *= (noteCount === 1) ? 4 : (noteCount === 2) ? 2 : 0.3;
+        } else if (playingCount === 0) {
+            // First note - medium density preferred
+            weight *= (noteCount >= 2 && noteCount <= 3) ? 2 : 1;
+        }
+
+        // Strong harmonic relationship = allow richer voicings
+        if (relationshipScore >= 2) {
+            weight *= (noteCount >= 3) ? 1.5 : 1;
+        }
+
+        // Random variation factor (30%)
+        weight *= (0.7 + Math.random() * 0.6);
+
+        return { intervals: opt.intervals, weight };
+    });
+
+    // Weighted random selection
+    const totalWeight = weightedOptions.reduce((sum, o) => sum + o.weight, 0);
+    let roll = Math.random() * totalWeight;
+
+    for (const opt of weightedOptions) {
+        roll -= opt.weight;
+        if (roll <= 0) {
+            return opt.intervals;
+        }
+    }
+
+    // Fallback
+    return [0, 700];
 }
 
 // Active notes for modulation (cell element -> note object)
@@ -474,10 +533,15 @@ function initHeroGrid() {
                 // Only respond to primary button (left mouse or touch)
                 if (e.button !== 0) return;
                 e.preventDefault();
+                e.stopPropagation();
 
                 // Capture pointer to this cell - this ensures we get all events
                 // even when pointer moves outside the element
-                cell.setPointerCapture(e.pointerId);
+                try {
+                    cell.setPointerCapture(e.pointerId);
+                } catch (err) {
+                    // Pointer capture failed on some mobile browsers
+                }
 
                 // If there's already a note playing on this cell, release it first
                 const existingNote = activeNotes.get(cell);
@@ -490,7 +554,8 @@ function initHeroGrid() {
                 activePointers.set(cell, {
                     pointerId: e.pointerId,
                     startX: e.clientX,
-                    startY: e.clientY
+                    startY: e.clientY,
+                    lastActivity: Date.now()
                 });
 
                 // Play note
@@ -505,6 +570,9 @@ function initHeroGrid() {
             cell.addEventListener('pointermove', (e) => {
                 const pointer = activePointers.get(cell);
                 if (!pointer || pointer.pointerId !== e.pointerId) return;
+
+                // Update activity timestamp
+                pointer.lastActivity = Date.now();
 
                 const note = activeNotes.get(cell);
                 if (note && !note.released && note.startX !== null) {
@@ -539,6 +607,19 @@ function initHeroGrid() {
             cell.addEventListener('pointerup', releaseCell);
             cell.addEventListener('pointercancel', releaseCell);
 
+            // Additional safety: release on lostpointercapture
+            cell.addEventListener('lostpointercapture', (e) => {
+                const pointer = activePointers.get(cell);
+                if (pointer && pointer.pointerId === e.pointerId) {
+                    activePointers.delete(cell);
+                    const note = activeNotes.get(cell);
+                    if (note && !note.released) {
+                        const fadeTime = releaseNote(note);
+                        fadeCell(cell, fadeTime);
+                    }
+                }
+            });
+
             // Prevent context menu on the cell
             cell.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
@@ -556,6 +637,11 @@ function initHeroGrid() {
 
             // Disable touch-action for smoother dragging
             cell.style.touchAction = 'none';
+
+            // Prevent iOS Safari touch callout
+            cell.style.webkitTouchCallout = 'none';
+            cell.style.webkitUserSelect = 'none';
+            cell.style.userSelect = 'none';
         }
         grid.appendChild(cell);
     }
@@ -1115,3 +1201,15 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('blur', () => {
     stopAllNotes();
 });
+
+// Stop notes when clicking outside the grid (e.g., on the audio player)
+document.addEventListener('pointerdown', (e) => {
+    // Check if click is outside the hero grid
+    const grid = document.getElementById('heroGrid');
+    if (grid && !grid.contains(e.target)) {
+        // Small delay to let the new interaction start first
+        setTimeout(() => {
+            stopAllNotes();
+        }, 50);
+    }
+}, true); // Use capture phase to catch it early
