@@ -137,6 +137,28 @@ function updatePitchForDrag(note, deltaX) {
     note.oscillator.detune.setTargetAtTime(note.baseDetune + cents, note.oscillator.context.currentTime, 0.02);
 }
 
+// Fade out note when released
+function releaseNote(note) {
+    if (!note || !note.gainNode) return;
+
+    const ctx = note.gainNode.context;
+    const now = ctx.currentTime;
+
+    // Cancel any scheduled gain changes and fade out quickly
+    note.gainNode.gain.cancelScheduledValues(now);
+    note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, now);
+    note.gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    // Stop oscillator after fade
+    setTimeout(() => {
+        try {
+            note.oscillator.stop();
+        } catch (e) {
+            // Already stopped
+        }
+    }, 350);
+}
+
 // Apply color flash to cell that fades out
 function flashCell(cell, duration) {
     const color = cellColors[Math.floor(Math.random() * cellColors.length)];
@@ -238,6 +260,12 @@ function initHeroGrid() {
                 if (holdInterval) {
                     clearInterval(holdInterval);
                     holdInterval = null;
+                }
+                // Fade out the note when released
+                const note = activeNotes.get(cell);
+                if (note) {
+                    releaseNote(note);
+                    activeNotes.delete(cell);
                 }
                 holdStartTime = null;
             }
