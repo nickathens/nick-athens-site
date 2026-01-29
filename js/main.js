@@ -109,13 +109,14 @@ function updateFilterForDrag(note, deltaY) {
 
     // Drag down (positive deltaY) closes filter to 200Hz
     // Drag up (negative deltaY) opens filter to 8000Hz
-    // 100px = full range in either direction
+    // Full screen height = full range in either direction
+    const screenHeight = window.innerHeight;
     const baseCutoff = 1000;
     const minCutoff = 200;
     const maxCutoff = 8000;
 
-    // Normalize: -1 (full up) to +1 (full down)
-    const normalized = Math.max(-1, Math.min(1, deltaY / 100));
+    // Normalize: -1 (full up) to +1 (full down) based on screen height
+    const normalized = Math.max(-1, Math.min(1, deltaY / (screenHeight * 0.5)));
 
     let cutoff;
     if (normalized > 0) {
@@ -133,11 +134,10 @@ function updateFilterForDrag(note, deltaY) {
 function updatePitchForDrag(note, deltaX) {
     if (!note || !note.oscillator) return;
 
-    // 100px drag = one 5th (700 cents)
-    // Clamp to +/- 1 5th (700 cents)
-    const centsPerPixel = 7;
+    // Full screen width = one 5th (700 cents), clamp to +/- 1 5th
+    const screenWidth = window.innerWidth;
     const maxCents = 700;
-    const cents = Math.max(-maxCents, Math.min(maxCents, deltaX * centsPerPixel));
+    const cents = Math.max(-maxCents, Math.min(maxCents, (deltaX / (screenWidth * 0.5)) * maxCents));
 
     note.oscillator.detune.setTargetAtTime(note.baseDetune + cents, note.oscillator.context.currentTime, 0.02);
 }
