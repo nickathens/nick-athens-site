@@ -190,8 +190,8 @@ function getSmartIntervals(baseFreq) {
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
 
-// Track which pointer (mouse or touch) is currently controlling each cell
-// Key: cell element, Value: { pointerId, startX, startY }
+// Track active pointers globally - Key: pointerId, Value: { cell, startX, startY }
+// Using pointerId as key (not cell) ensures we can always find and clean up a pointer
 const activePointers = new Map();
 
 // Initialize audio context immediately on first user interaction
@@ -387,6 +387,21 @@ function stopAllNotes() {
     activePointers.clear();
 }
 
+// Release a specific pointer and its associated note
+function releasePointer(pointerId) {
+    const pointer = activePointers.get(pointerId);
+    if (!pointer) return;
+
+    activePointers.delete(pointerId);
+
+    const { cell } = pointer;
+    const note = activeNotes.get(cell);
+    if (note && !note.released) {
+        const fadeTime = releaseNote(note);
+        fadeCell(cell, fadeTime);
+    }
+}
+
 // Convert hex to HSL
 function hexToHsl(hex) {
     const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -528,111 +543,12 @@ function initHeroGrid() {
                 cell.classList.add('off');
             }
 
-            // Use Pointer Events API - unifies mouse and touch with simpler handling
-            cell.addEventListener('pointerdown', (e) => {
-                // Only respond to primary button (left mouse or touch)
-                if (e.button !== 0) return;
-                e.preventDefault();
-                e.stopPropagation();
-
-                // Capture pointer to this cell - this ensures we get all events
-                // even when pointer moves outside the element
-                try {
-                    cell.setPointerCapture(e.pointerId);
-                } catch (err) {
-                    // Pointer capture failed on some mobile browsers
-                }
-
-                // If there's already a note playing on this cell, release it first
-                const existingNote = activeNotes.get(cell);
-                if (existingNote && !existingNote.released) {
-                    releaseNote(existingNote);
-                    fadeCell(cell, 0.1);
-                }
-
-                // Track this pointer
-                activePointers.set(cell, {
-                    pointerId: e.pointerId,
-                    startX: e.clientX,
-                    startY: e.clientY,
-                    lastActivity: Date.now()
-                });
-
-                // Play note
-                const note = playTuningNote(cell);
-                if (note) {
-                    note.startX = e.clientX;
-                    note.startY = e.clientY;
-                    activateCell(cell);
-                }
-            });
-
-            cell.addEventListener('pointermove', (e) => {
-                const pointer = activePointers.get(cell);
-                if (!pointer || pointer.pointerId !== e.pointerId) return;
-
-                // Update activity timestamp
-                pointer.lastActivity = Date.now();
-
-                const note = activeNotes.get(cell);
-                if (note && !note.released && note.startX !== null) {
-                    const deltaX = e.clientX - note.startX;
-                    const deltaY = e.clientY - note.startY;
-                    updatePitchForDrag(note, deltaX);
-                    updateFilterForDrag(note, deltaY);
-                    updateCellColor(cell, deltaX, deltaY);
-                }
-            });
-
-            function releaseCell(e) {
-                const pointer = activePointers.get(cell);
-                if (!pointer || pointer.pointerId !== e.pointerId) return;
-
-                activePointers.delete(cell);
-
-                // Release pointer capture
-                try {
-                    cell.releasePointerCapture(e.pointerId);
-                } catch (err) {
-                    // Already released
-                }
-
-                const note = activeNotes.get(cell);
-                if (note && !note.released) {
-                    const fadeTime = releaseNote(note);
-                    fadeCell(cell, fadeTime);
-                }
-            }
-
-            cell.addEventListener('pointerup', releaseCell);
-            cell.addEventListener('pointercancel', releaseCell);
-
-            // Additional safety: release on lostpointercapture
-            cell.addEventListener('lostpointercapture', (e) => {
-                const pointer = activePointers.get(cell);
-                if (pointer && pointer.pointerId === e.pointerId) {
-                    activePointers.delete(cell);
-                    const note = activeNotes.get(cell);
-                    if (note && !note.released) {
-                        const fadeTime = releaseNote(note);
-                        fadeCell(cell, fadeTime);
-                    }
-                }
-            });
+            // Mark cell as interactive for global event handler
+            cell.dataset.synthCell = 'true';
 
             // Prevent context menu on the cell
             cell.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                // Also release any active note on right-click
-                const pointer = activePointers.get(cell);
-                if (pointer) {
-                    activePointers.delete(cell);
-                    const note = activeNotes.get(cell);
-                    if (note && !note.released) {
-                        const fadeTime = releaseNote(note);
-                        fadeCell(cell, fadeTime);
-                    }
-                }
             });
 
             // Disable touch-action for smoother dragging
@@ -1164,6 +1080,92 @@ function onSynthDiscovered() {
     }
 }
 
+// Global pointer event handlers for synth - attached to document for reliability
+function initGlobalSynthEvents() {
+    // POINTERDOWN - start a note
+    document.addEventListener('pointerdown', (e) => {
+        // Only left mouse button or touch
+        if (e.button !== 0) return;
+
+        const cell = e.target.closest('[data-synth-cell="true"]');
+        if (!cell) return;
+
+        e.preventDefault();
+
+        // If this pointer is already tracking something, release it first
+        if (activePointers.has(e.pointerId)) {
+            releasePointer(e.pointerId);
+        }
+
+        // If there's already a note playing on this cell, release it first
+        const existingNote = activeNotes.get(cell);
+        if (existingNote && !existingNote.released) {
+            releaseNote(existingNote);
+            fadeCell(cell, 0.1);
+        }
+
+        // Track this pointer by its ID (not by cell)
+        activePointers.set(e.pointerId, {
+            cell: cell,
+            startX: e.clientX,
+            startY: e.clientY
+        });
+
+        // Play note
+        const note = playTuningNote(cell);
+        if (note) {
+            note.startX = e.clientX;
+            note.startY = e.clientY;
+            activateCell(cell);
+        }
+    }, { passive: false });
+
+    // POINTERMOVE - modulate the note
+    document.addEventListener('pointermove', (e) => {
+        const pointer = activePointers.get(e.pointerId);
+        if (!pointer) return;
+
+        const { cell } = pointer;
+        const note = activeNotes.get(cell);
+
+        if (note && !note.released && note.startX !== null) {
+            const deltaX = e.clientX - note.startX;
+            const deltaY = e.clientY - note.startY;
+            updatePitchForDrag(note, deltaX);
+            updateFilterForDrag(note, deltaY);
+            updateCellColor(cell, deltaX, deltaY);
+        }
+    });
+
+    // POINTERUP - release the note
+    document.addEventListener('pointerup', (e) => {
+        releasePointer(e.pointerId);
+    });
+
+    // POINTERCANCEL - release the note (browser interrupted)
+    document.addEventListener('pointercancel', (e) => {
+        releasePointer(e.pointerId);
+    });
+
+    // POINTERLEAVE on document - release if pointer leaves the window entirely
+    document.addEventListener('pointerleave', (e) => {
+        // Only if leaving the document itself (not just an element)
+        if (e.target === document) {
+            releasePointer(e.pointerId);
+        }
+    });
+
+    // Right-click anywhere releases all notes
+    document.addEventListener('contextmenu', (e) => {
+        // Check if right-clicking on or near the grid
+        const grid = document.getElementById('heroGrid');
+        if (grid && grid.contains(e.target)) {
+            e.preventDefault();
+            stopAllNotes();
+        }
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initHeroGrid();
@@ -1173,6 +1175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSynthVolume();
     initSmartHarmony();
     initSynthManual();
+    initGlobalSynthEvents();
 
     // Prime audio context on first interaction for instant response later
     const primeAudio = () => {
@@ -1202,14 +1205,22 @@ window.addEventListener('blur', () => {
     stopAllNotes();
 });
 
-// Stop notes when clicking outside the grid (e.g., on the audio player)
-document.addEventListener('pointerdown', (e) => {
-    // Check if click is outside the hero grid
-    const grid = document.getElementById('heroGrid');
-    if (grid && !grid.contains(e.target)) {
-        // Small delay to let the new interaction start first
-        setTimeout(() => {
-            stopAllNotes();
-        }, 50);
+// Safety: periodically check for orphaned pointers (should never happen, but just in case)
+setInterval(() => {
+    // If there are active pointers but no mouse buttons/touches are actually pressed, clean up
+    if (activePointers.size > 0) {
+        // We can't directly check if buttons are pressed, but we can check if notes are very old
+        const now = Date.now();
+        activeNotes.forEach((note, cell) => {
+            if (!note.released && audioContext) {
+                const age = audioContext.currentTime - note.startTime;
+                // If a note has been playing for more than 60 seconds, something is wrong
+                if (age > 60) {
+                    console.log('Cleaning up orphaned note');
+                    releaseNote(note);
+                    fadeCell(cell, 0.5);
+                }
+            }
+        });
     }
-}, true); // Use capture phase to catch it early
+}, 10000); // Check every 10 seconds
