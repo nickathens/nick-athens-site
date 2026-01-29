@@ -30,6 +30,9 @@ let tuningEnabled = true;
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
 
+// Safety timeout - kill any note after 30 seconds max (prevents infinite drones)
+const MAX_NOTE_DURATION = 30000;
+
 // Initialize audio context immediately on first user interaction
 function ensureAudioContext() {
     if (!audioContext) {
@@ -94,8 +97,18 @@ function playTuningNote(cell) {
         startX: null,
         startY: null,
         cell: cell,
-        released: false
+        released: false,
+        safetyTimeout: null
     };
+
+    // Safety timeout - force release after MAX_NOTE_DURATION to prevent infinite drones
+    note.safetyTimeout = setTimeout(() => {
+        if (!note.released) {
+            console.log('Safety timeout: forcing note release');
+            releaseNote(note);
+            fadeCell(cell, 2.5);
+        }
+    }, MAX_NOTE_DURATION);
 
     // Track this note
     activeNotes.set(cell, note);
@@ -147,6 +160,12 @@ function releaseNote(note) {
     if (!note || !note.gainNode || note.released) return;
     note.released = true;
 
+    // Clear safety timeout since we're releasing properly
+    if (note.safetyTimeout) {
+        clearTimeout(note.safetyTimeout);
+        note.safetyTimeout = null;
+    }
+
     const ctx = note.gainNode.context;
     const now = ctx.currentTime;
     const fadeTime = 2.5;
@@ -156,17 +175,30 @@ function releaseNote(note) {
     note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, now);
     note.gainNode.gain.exponentialRampToValueAtTime(0.001, now + fadeTime);
 
-    // Stop oscillator after fade
+    // Stop oscillator after fade and disconnect all nodes
     setTimeout(() => {
         try {
             note.oscillator.stop();
+            note.oscillator.disconnect();
+            note.filter.disconnect();
+            note.gainNode.disconnect();
         } catch (e) {
-            // Already stopped
+            // Already stopped/disconnected
         }
         activeNotes.delete(note.cell);
     }, fadeTime * 1000 + 50);
 
     return fadeTime;
+}
+
+// Force stop all active notes - emergency cleanup
+function stopAllNotes() {
+    activeNotes.forEach((note, cell) => {
+        if (!note.released) {
+            releaseNote(note);
+            fadeCell(cell, 2.5);
+        }
+    });
 }
 
 // Convert hex to HSL
@@ -836,4 +868,15 @@ let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(initHeroGrid, 250);
+});
+
+// Clean up notes when page loses focus or visibility (prevents stuck notes)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopAllNotes();
+    }
+});
+
+window.addEventListener('blur', () => {
+    stopAllNotes();
 });
