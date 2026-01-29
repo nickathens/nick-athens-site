@@ -27,6 +27,17 @@ const cellColors = [
 let audioContext = null;
 let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
+let chordMode = 'off'; // 'off', 'open', 'power', 'stack', 'wide'
+
+// Chord voicings based on perfect fifths (Pythagorean stacking)
+// All intervals in cents (100 cents = 1 semitone, 700 cents = perfect 5th)
+const chordVoicings = {
+    'off': [0], // Single note
+    'open': [0, 700], // Root + 5th
+    'power': [0, 700, 1200], // Root + 5th + octave
+    'stack': [0, 700, 1400], // Root + 5th + 9th (two stacked 5ths)
+    'wide': [0, 700, 1200, 1900] // Root + 5th + 8ve + 12th (spread across 2 octaves)
+};
 
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
@@ -45,7 +56,7 @@ function ensureAudioContext() {
     return audioContext;
 }
 
-// Play a tuning note with modulation support
+// Play a tuning note with modulation support (supports chord mode)
 // Returns note object for modulation control
 function playTuningNote(cell) {
     if (!tuningEnabled) return null;
@@ -56,52 +67,72 @@ function playTuningNote(cell) {
     // Pick a random orchestral tuning frequency
     const baseFrequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
 
-    // Create oscillator for the tone
-    const oscillator = ctx.createOscillator();
-    const filter = ctx.createBiquadFilter();
+    // Get chord voicing intervals
+    const intervals = chordVoicings[chordMode] || [0];
+
+    // Arrays to hold all oscillators/filters for the chord
+    const oscillators = [];
+    const filters = [];
+
+    // Create a single gain node for the whole chord
     const gainNode = ctx.createGain();
-
-    // Use sawtooth wave - closer to string instrument timbre
-    oscillator.type = 'sawtooth';
-    oscillator.frequency.value = baseFrequency;
-
-    // Add slight detune for more organic feel (like strings settling)
-    oscillator.detune.value = (Math.random() - 0.5) * 15;
-
-    // Low-pass filter starts partially closed for modulation range
-    filter.type = 'lowpass';
-    filter.frequency.value = 1000;
-    filter.Q.value = 1;
-
-    // Chain: oscillator -> filter -> gain -> output
-    oscillator.connect(filter);
-    filter.connect(gainNode);
     gainNode.connect(ctx.destination);
 
-    // Quick attack, then sustain indefinitely (release handles fade)
-    // Use synthVolume to scale the gain (0.15 max * synthVolume)
-    const targetGain = 0.15 * synthVolume;
+    // Calculate gain per voice (divide total gain among chord tones)
+    const targetGain = (0.15 * synthVolume) / Math.sqrt(intervals.length);
+
+    // Create an oscillator + filter for each interval in the chord
+    intervals.forEach((cents, index) => {
+        const oscillator = ctx.createOscillator();
+        const filter = ctx.createBiquadFilter();
+
+        // Use sawtooth wave - closer to string instrument timbre
+        oscillator.type = 'sawtooth';
+
+        // Calculate frequency from cents (100 cents = 1 semitone)
+        const ratio = Math.pow(2, cents / 1200);
+        oscillator.frequency.value = baseFrequency * ratio;
+
+        // Add slight detune for more organic feel (like strings settling)
+        // Each voice gets slightly different detune for richness
+        oscillator.detune.value = (Math.random() - 0.5) * 15 + (index * 2);
+
+        // Low-pass filter starts partially closed for modulation range
+        filter.type = 'lowpass';
+        filter.frequency.value = 1000;
+        filter.Q.value = 1;
+
+        // Chain: oscillator -> filter -> gain
+        oscillator.connect(filter);
+        filter.connect(gainNode);
+
+        oscillator.start(now);
+
+        oscillators.push(oscillator);
+        filters.push(filter);
+    });
+
+    // Quick attack
     gainNode.gain.value = 0;
     gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.02);
-    // No decay scheduled - note sustains until released
+    gainNode.gain.linearRampToValueAtTime(targetGain * intervals.length, now + 0.02);
 
-    oscillator.start(now);
-    // Don't schedule stop - let release handle it
-
-    // Note object for modulation
+    // Note object for modulation (stores arrays for chord voices)
     const note = {
-        oscillator,
-        filter,
+        oscillators, // Array of oscillators
+        filters, // Array of filters
         gainNode,
         baseFrequency,
-        baseDetune: oscillator.detune.value,
+        baseDetunes: oscillators.map(osc => osc.detune.value),
         startTime: now,
         startX: null,
         startY: null,
         cell: cell,
         released: false,
-        safetyTimeout: null
+        safetyTimeout: null,
+        // Keep single-note compatibility
+        get oscillator() { return this.oscillators[0]; },
+        get filter() { return this.filters[0]; }
     };
 
     // Safety timeout - force release after MAX_NOTE_DURATION to prevent infinite drones
@@ -116,12 +147,15 @@ function playTuningNote(cell) {
     // Track this note
     activeNotes.set(cell, note);
 
+    // Trigger discovery on first note
+    onSynthDiscovered();
+
     return note;
 }
 
 // Update filter based on vertical drag (down = close to 200Hz, up = open to 8000Hz)
 function updateFilterForDrag(note, deltaY) {
-    if (!note || !note.filter) return;
+    if (!note || !note.filters || note.filters.length === 0) return;
 
     // Drag down (positive deltaY) closes filter to 200Hz
     // Drag up (negative deltaY) opens filter to 8000Hz
@@ -143,19 +177,26 @@ function updateFilterForDrag(note, deltaY) {
         cutoff = baseCutoff * Math.pow(maxCutoff / baseCutoff, -normalized);
     }
 
-    note.filter.frequency.setTargetAtTime(cutoff, note.filter.context.currentTime, 0.05);
+    const now = note.filters[0].context.currentTime;
+    note.filters.forEach(filter => {
+        filter.frequency.setTargetAtTime(cutoff, now, 0.05);
+    });
 }
 
 // Update pitch based on horizontal drag (5ths up/down)
 function updatePitchForDrag(note, deltaX) {
-    if (!note || !note.oscillator) return;
+    if (!note || !note.oscillators || note.oscillators.length === 0) return;
 
     // Full screen width = one 5th (700 cents), clamp to +/- 1 5th
     const screenWidth = window.innerWidth;
     const maxCents = 700;
     const cents = Math.max(-maxCents, Math.min(maxCents, (deltaX / (screenWidth * 0.5)) * maxCents));
 
-    note.oscillator.detune.setTargetAtTime(note.baseDetune + cents, note.oscillator.context.currentTime, 0.02);
+    const now = note.oscillators[0].context.currentTime;
+    note.oscillators.forEach((oscillator, index) => {
+        const baseDetune = note.baseDetunes[index] || 0;
+        oscillator.detune.setTargetAtTime(baseDetune + cents, now, 0.02);
+    });
 }
 
 // Fade out note when released - 2.5 second fade
@@ -178,12 +219,20 @@ function releaseNote(note) {
     note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, now);
     note.gainNode.gain.exponentialRampToValueAtTime(0.001, now + fadeTime);
 
-    // Stop oscillator after fade and disconnect all nodes
+    // Stop all oscillators after fade and disconnect all nodes
     setTimeout(() => {
         try {
-            note.oscillator.stop();
-            note.oscillator.disconnect();
-            note.filter.disconnect();
+            // Handle array of oscillators/filters (chord mode)
+            if (note.oscillators) {
+                note.oscillators.forEach(osc => {
+                    try { osc.stop(); osc.disconnect(); } catch (e) {}
+                });
+            }
+            if (note.filters) {
+                note.filters.forEach(filter => {
+                    try { filter.disconnect(); } catch (e) {}
+                });
+            }
             note.gainNode.disconnect();
         } catch (e) {
             // Already stopped/disconnected
@@ -413,6 +462,9 @@ function initHeroGrid() {
 
             // Mouse events - start on cell, track on document for full-screen drag
             cell.addEventListener('mousedown', (e) => {
+                // Only respond to left mouse button (button 0)
+                if (e.button !== 0) return;
+
                 // Clean up any previous handlers that weren't properly removed
                 if (cell._cleanupHandlers) {
                     cell._cleanupHandlers();
@@ -427,7 +479,8 @@ function initHeroGrid() {
                     }
                 }
 
-                function onMouseUp() {
+                function onMouseUp(upEvent) {
+                    // Release on any mouse button up
                     endNote();
                     cleanup();
                 }
@@ -435,13 +488,21 @@ function initHeroGrid() {
                 function cleanup() {
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+                    document.removeEventListener('contextmenu', onContextMenu);
                     cell._cleanupHandlers = null;
+                }
+
+                // Also release on right-click context menu
+                function onContextMenu() {
+                    endNote();
+                    cleanup();
                 }
 
                 cell._cleanupHandlers = cleanup;
 
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
+                document.addEventListener('contextmenu', onContextMenu);
             });
 
             // Touch events - start on cell, track on document for full-screen drag
@@ -942,11 +1003,88 @@ function initSynthVolume() {
         // Update any currently playing notes to the new volume
         activeNotes.forEach((note) => {
             if (!note.released && note.gainNode) {
-                const targetGain = 0.15 * synthVolume;
+                const intervals = chordVoicings[chordMode] || [0];
+                const targetGain = (0.15 * synthVolume) / Math.sqrt(intervals.length) * intervals.length;
                 note.gainNode.gain.setTargetAtTime(targetGain, note.gainNode.context.currentTime, 0.05);
             }
         });
     });
+}
+
+// Initialize chord mode control
+function initChordMode() {
+    const select = document.getElementById('chordSelect');
+    if (!select) return;
+
+    select.value = chordMode;
+
+    select.addEventListener('change', (e) => {
+        chordMode = e.target.value;
+    });
+}
+
+// Track if synth has been discovered (for showing manual)
+let synthDiscovered = localStorage.getItem('synthDiscovered') === 'true';
+let firstNoteThisSession = !synthDiscovered;
+
+// Show synth manual
+function showSynthManual() {
+    const manual = document.getElementById('synthManual');
+    if (!manual) return;
+
+    manual.style.display = 'flex';
+    requestAnimationFrame(() => {
+        manual.classList.add('active');
+    });
+}
+
+// Hide synth manual
+function hideSynthManual() {
+    const manual = document.getElementById('synthManual');
+    if (!manual) return;
+
+    manual.classList.remove('active');
+    setTimeout(() => {
+        manual.style.display = 'none';
+    }, 300);
+}
+
+// Initialize synth manual
+function initSynthManual() {
+    const manual = document.getElementById('synthManual');
+    const closeBtn = document.getElementById('synthManualClose');
+
+    if (!manual) return;
+
+    // Close button
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideSynthManual);
+    }
+
+    // Click outside to close
+    manual.addEventListener('click', (e) => {
+        if (e.target === manual) {
+            hideSynthManual();
+        }
+    });
+
+    // Escape key to close
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && manual.classList.contains('active')) {
+            hideSynthManual();
+        }
+    });
+}
+
+// Called when first note is played
+function onSynthDiscovered() {
+    if (firstNoteThisSession) {
+        firstNoteThisSession = false;
+        synthDiscovered = true;
+        localStorage.setItem('synthDiscovered', 'true');
+        // Show manual after a short delay so they hear the first note
+        setTimeout(showSynthManual, 800);
+    }
 }
 
 // Initialize
@@ -956,6 +1094,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initSmoothScroll();
     initAudioPlayer();
     initSynthVolume();
+    initChordMode();
+    initSynthManual();
 
     // Prime audio context on first interaction for instant response later
     const primeAudio = () => {
@@ -983,4 +1123,13 @@ document.addEventListener('visibilitychange', () => {
 
 window.addEventListener('blur', () => {
     stopAllNotes();
+});
+
+// Prevent right-click from causing stuck notes on the grid
+document.addEventListener('contextmenu', (e) => {
+    // If right-clicking on or near the grid, release all notes
+    const grid = document.getElementById('heroGrid');
+    if (grid && grid.contains(e.target)) {
+        stopAllNotes();
+    }
 });

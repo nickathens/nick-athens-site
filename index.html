@@ -20,9 +20,21 @@
 </head>
 <body>
     <nav class="nav">
-        <div class="synth-volume">
-            <svg class="synth-volume-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
-            <input type="range" class="synth-volume-slider" id="synthVolumeSlider" min="0" max="100" value="50" title="Grid synth volume">
+        <div class="synth-controls">
+            <div class="synth-volume">
+                <svg class="synth-volume-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+                <input type="range" class="synth-volume-slider" id="synthVolumeSlider" min="0" max="100" value="50" title="Grid synth volume">
+            </div>
+            <button class="chord-toggle" id="chordToggle" title="Chord mode">
+                <span class="chord-toggle-label">5ths</span>
+            </button>
+            <select class="chord-select" id="chordSelect" title="Chord voicing">
+                <option value="off">Off</option>
+                <option value="open">Open 5th</option>
+                <option value="power">Power (5th+8ve)</option>
+                <option value="stack">Stacked 5ths</option>
+                <option value="wide">Wide (2 octaves)</option>
+            </select>
         </div>
         <div class="nav-links">
             <a href="#film">Film</a>
@@ -214,6 +226,57 @@
         <div class="audio-player-playlist" id="audioPlayerPlaylist"></div>
     </div>
     <audio id="audioElement"></audio>
+
+    <!-- Synth Manual (hidden until discovered) -->
+    <div class="synth-manual" id="synthManual">
+        <div class="synth-manual-content">
+            <button class="synth-manual-close" id="synthManualClose">&times;</button>
+            <h3>Grid Synth</h3>
+            <p class="synth-manual-intro">You found the hidden synth. The grid plays orchestral tuning tones.</p>
+            <div class="synth-manual-controls">
+                <div class="synth-manual-item">
+                    <span class="synth-manual-gesture">Click & Hold</span>
+                    <span class="synth-manual-effect">Play note (sustains while held)</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-gesture">Drag Down</span>
+                    <span class="synth-manual-effect">Close filter (darker tone)</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-gesture">Drag Up</span>
+                    <span class="synth-manual-effect">Open filter (brighter tone)</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-gesture">Drag Left/Right</span>
+                    <span class="synth-manual-effect">Pitch bend (5ths up/down)</span>
+                </div>
+            </div>
+            <h4>Chord Voicings</h4>
+            <div class="synth-manual-chords">
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Off</span>
+                    <span class="synth-manual-effect">Single note</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Open 5th</span>
+                    <span class="synth-manual-effect">Root + perfect fifth</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Power</span>
+                    <span class="synth-manual-effect">Root + 5th + octave</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Stacked 5ths</span>
+                    <span class="synth-manual-effect">Root + 5th + 9th</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Wide</span>
+                    <span class="synth-manual-effect">2-octave spread</span>
+                </div>
+            </div>
+            <p class="synth-manual-tip">Color follows sound: vertical = warmth, horizontal = brightness</p>
+        </div>
+    </div>
 
     <script src="js/main.js"></script>
 </body>
