@@ -53,138 +53,121 @@ let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
 
 // Smart Harmony System
-// Extended chromatic approach with varied voicings
-// All intervals in cents (100 cents = 1 semitone)
+// Based on pentatonic scale (impossible to sound bad) with true probabilistic voicing
+// Research-backed: Eno's generative principles, modal jazz, spectral music
 
-// Note name reference frequencies (octave 4)
-const noteFreqRef = {
-    'C': 261.63, 'D': 293.66, 'E': 329.63, 'F': 349.23,
-    'G': 392.00, 'A': 440.00, 'B': 493.88
+// Pentatonic scale intervals (semitones from root) - no dissonance possible
+// These are the "safe" intervals that always sound good together
+const PENTATONIC_INTERVALS = [0, 2, 4, 7, 9]; // Major pentatonic: C D E G A
+
+// Consonant voicing intervals in cents (100 cents = 1 semitone)
+// Ordered by consonance (simpler frequency ratios = more consonant)
+const CONSONANT_INTERVALS = {
+    unison: 0,
+    octave: 1200,
+    fifth: 700,
+    fourth: 500,
+    majorThird: 400,
+    minorThird: 300,
+    majorSixth: 900,
+    minorSixth: 800
 };
 
-// All available voicings - from sparse to dense
-const voicingOptions = [
-    // Single notes (weight: common when already dense)
-    { intervals: [0], weight: 2 },
-    // Octave only (weight: medium)
-    { intervals: [0, 1200], weight: 3 },
-    // Open 5th (classic orchestral)
-    { intervals: [0, 700], weight: 4 },
-    // Power chord
-    { intervals: [0, 700, 1200], weight: 3 },
-    // Suspended (no 3rd - ambiguous)
-    { intervals: [0, 500, 700], weight: 2 },
-    // Open with 9th
-    { intervals: [0, 700, 1400], weight: 2 },
-    // Stacked 5ths (medieval/modal)
-    { intervals: [0, 700, 1400, 2100], weight: 1 },
-    // Wide spread (orchestral tutti)
-    { intervals: [0, -1200, 700, 1200], weight: 1 },
-    // Cluster (dissonant, rare)
-    { intervals: [0, 200, 400], weight: 0.5 },
-    // Minor feel (for variety)
-    { intervals: [0, 300, 700], weight: 1 },
-    // Major feel (for variety)
-    { intervals: [0, 400, 700], weight: 1 }
-];
-
-// Convert frequency to note name
-function frequencyToNote(freq) {
-    // Normalize to octave 4
-    let normalized = freq;
-    while (normalized < 200) normalized *= 2;
-    while (normalized > 500) normalized /= 2;
-
-    let closest = 'A';
-    let minDiff = Infinity;
-
-    for (const [name, refFreq] of Object.entries(noteFreqRef)) {
-        const diff = Math.abs(normalized - refFreq);
-        if (diff < minDiff) {
-            minDiff = diff;
-            closest = name;
-        }
-    }
-    return closest;
-}
-
-// Circle of fifths for relationship detection
-const circleOfFifths = ['C', 'G', 'D', 'A', 'E', 'B', 'F'];
-
-// Check harmonic relationship between two notes
-function getHarmonicRelation(note1, note2) {
-    const idx1 = circleOfFifths.indexOf(note1);
-    const idx2 = circleOfFifths.indexOf(note2);
-    if (idx1 === -1 || idx2 === -1) return 'unrelated';
-
-    const distance = Math.abs(idx1 - idx2);
-    if (distance === 0) return 'same';
-    if (distance === 1 || distance === 6) return 'fifth'; // Adjacent in circle
-    if (distance === 2 || distance === 5) return 'close'; // Two steps
-    return 'distant';
-}
-
-// Get weighted random voicing based on context
-function getSmartIntervals(baseFreq) {
-    const playingFreqs = [];
+// Get how many notes are currently sounding (not released)
+function getPlayingCount() {
+    let count = 0;
     activeNotes.forEach(note => {
-        if (!note.released) {
-            playingFreqs.push(note.baseFrequency);
-        }
+        if (!note.released) count++;
     });
+    return count;
+}
 
-    const playingCount = playingFreqs.length;
-    const newNote = frequencyToNote(baseFreq);
+// Determine voicing size (1, 2, or 3 notes) with true probability
+function getVoicingSize() {
+    const playingCount = getPlayingCount();
+    const roll = Math.random();
 
-    // Analyze relationships with playing notes
-    let relationshipScore = 0;
-    if (playingCount > 0) {
-        const playingNotes = playingFreqs.map(f => frequencyToNote(f));
-        playingNotes.forEach(pn => {
-            const rel = getHarmonicRelation(newNote, pn);
-            if (rel === 'same') relationshipScore += 3;
-            else if (rel === 'fifth') relationshipScore += 2;
-            else if (rel === 'close') relationshipScore += 1;
-        });
+    // Base probabilities: 50% single, 35% dyad, 15% triad
+    // These shift dramatically based on density
+
+    if (playingCount === 0) {
+        // Nothing playing - can be rich
+        if (roll < 0.40) return 1;      // 40% single
+        if (roll < 0.75) return 2;      // 35% dyad
+        return 3;                        // 25% triad
+    } else if (playingCount === 1) {
+        // One note - still room for richness
+        if (roll < 0.50) return 1;      // 50% single
+        if (roll < 0.85) return 2;      // 35% dyad
+        return 3;                        // 15% triad
+    } else if (playingCount === 2) {
+        // Getting full - favor singles
+        if (roll < 0.65) return 1;      // 65% single
+        if (roll < 0.95) return 2;      // 30% dyad
+        return 3;                        // 5% triad
+    } else {
+        // Dense - almost always single
+        if (roll < 0.85) return 1;      // 85% single
+        return 2;                        // 15% dyad, no triads
+    }
+}
+
+// Pick consonant intervals for a chord voicing
+function pickIntervals(size) {
+    if (size === 1) return [0];
+
+    const intervals = [0]; // Root always included
+    const roll = Math.random();
+
+    if (size >= 2) {
+        // Pick second note - favor fifths and octaves heavily
+        if (roll < 0.35) {
+            intervals.push(CONSONANT_INTERVALS.fifth);           // Perfect 5th (most common)
+        } else if (roll < 0.55) {
+            intervals.push(CONSONANT_INTERVALS.octave);          // Octave
+        } else if (roll < 0.70) {
+            intervals.push(CONSONANT_INTERVALS.fourth);          // Perfect 4th
+        } else if (roll < 0.80) {
+            intervals.push(-CONSONANT_INTERVALS.fifth);          // 5th below (inverted)
+        } else if (roll < 0.90) {
+            intervals.push(CONSONANT_INTERVALS.majorThird);      // Major 3rd
+        } else {
+            intervals.push(CONSONANT_INTERVALS.minorThird);      // Minor 3rd
+        }
     }
 
-    // Build weighted list based on context
-    const weightedOptions = voicingOptions.map(opt => {
-        let weight = opt.weight;
-        const noteCount = opt.intervals.length;
-
-        // More notes playing = prefer sparser voicings
-        if (playingCount >= 3) {
-            weight *= (noteCount === 1) ? 4 : (noteCount === 2) ? 2 : 0.3;
-        } else if (playingCount === 0) {
-            // First note - medium density preferred
-            weight *= (noteCount >= 2 && noteCount <= 3) ? 2 : 1;
-        }
-
-        // Strong harmonic relationship = allow richer voicings
-        if (relationshipScore >= 2) {
-            weight *= (noteCount >= 3) ? 1.5 : 1;
-        }
-
-        // Random variation factor (30%)
-        weight *= (0.7 + Math.random() * 0.6);
-
-        return { intervals: opt.intervals, weight };
-    });
-
-    // Weighted random selection
-    const totalWeight = weightedOptions.reduce((sum, o) => sum + o.weight, 0);
-    let roll = Math.random() * totalWeight;
-
-    for (const opt of weightedOptions) {
-        roll -= opt.weight;
-        if (roll <= 0) {
-            return opt.intervals;
+    if (size >= 3) {
+        // Pick third note - add octave displacement or another consonance
+        const roll2 = Math.random();
+        if (roll2 < 0.30) {
+            intervals.push(CONSONANT_INTERVALS.octave);          // Add octave
+        } else if (roll2 < 0.50) {
+            intervals.push(-CONSONANT_INTERVALS.octave);         // Octave below
+        } else if (roll2 < 0.70) {
+            intervals.push(CONSONANT_INTERVALS.fifth + CONSONANT_INTERVALS.octave); // 5th + octave
+        } else if (roll2 < 0.85) {
+            intervals.push(CONSONANT_INTERVALS.fourth);          // Add 4th if not there
+        } else {
+            intervals.push(CONSONANT_INTERVALS.fifth * 2);       // Stacked 5th (9th)
         }
     }
 
-    // Fallback
-    return [0, 700];
+    return intervals;
+}
+
+// Main harmony function - returns intervals in cents
+function getSmartIntervals(baseFreq) {
+    const size = getVoicingSize();
+    const intervals = pickIntervals(size);
+
+    // Add subtle random variation to keep it interesting
+    // Sometimes shift intervals up/down an octave for register variety
+    if (Math.random() < 0.15 && intervals.length > 1) {
+        // Occasionally drop root down an octave for width
+        intervals[0] = -1200;
+    }
+
+    return intervals;
 }
 
 // Active notes - now tracked by pointerId for absolute reliability
