@@ -25,16 +25,11 @@
                 <svg class="synth-volume-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
                 <input type="range" class="synth-volume-slider" id="synthVolumeSlider" min="0" max="100" value="50" title="Grid synth volume">
             </div>
-            <button class="chord-toggle" id="chordToggle" title="Chord mode">
-                <span class="chord-toggle-label">5ths</span>
-            </button>
-            <select class="chord-select" id="chordSelect" title="Chord voicing">
-                <option value="off">Off</option>
-                <option value="open">Open 5th</option>
-                <option value="power">Power (5th+8ve)</option>
-                <option value="stack">Stacked 5ths</option>
-                <option value="wide">Wide (2 octaves)</option>
-            </select>
+            <label class="harmony-toggle" title="Smart Harmony - notes adapt to what's playing">
+                <input type="checkbox" id="harmonyToggle">
+                <span class="harmony-toggle-slider"></span>
+                <span class="harmony-toggle-label">Harmony</span>
+            </label>
         </div>
         <div class="nav-links">
             <a href="#film">Film</a>
@@ -251,29 +246,18 @@
                     <span class="synth-manual-effect">Pitch bend (5ths up/down)</span>
                 </div>
             </div>
-            <h4>Chord Voicings</h4>
+            <h4>Smart Harmony</h4>
             <div class="synth-manual-chords">
                 <div class="synth-manual-item">
-                    <span class="synth-manual-chord">Off</span>
-                    <span class="synth-manual-effect">Single note</span>
+                    <span class="synth-manual-chord">Off (default)</span>
+                    <span class="synth-manual-effect">Single notes only</span>
                 </div>
                 <div class="synth-manual-item">
-                    <span class="synth-manual-chord">Open 5th</span>
-                    <span class="synth-manual-effect">Root + perfect fifth</span>
-                </div>
-                <div class="synth-manual-item">
-                    <span class="synth-manual-chord">Power</span>
-                    <span class="synth-manual-effect">Root + 5th + octave</span>
-                </div>
-                <div class="synth-manual-item">
-                    <span class="synth-manual-chord">Stacked 5ths</span>
-                    <span class="synth-manual-effect">Root + 5th + 9th</span>
-                </div>
-                <div class="synth-manual-item">
-                    <span class="synth-manual-chord">Wide</span>
-                    <span class="synth-manual-effect">2-octave spread</span>
+                    <span class="synth-manual-chord">On</span>
+                    <span class="synth-manual-effect">Notes build intelligent chords based on what's already playing</span>
                 </div>
             </div>
+            <p class="synth-manual-harmony-note">When Harmony is on: first note plays an open 5th. Subsequent notes adapt - same pitch family adds power, 5th relationships stack beautifully, complex textures simplify to single notes.</p>
             <p class="synth-manual-tip">Color follows sound: vertical = warmth, horizontal = brightness</p>
         </div>
     </div>

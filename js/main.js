@@ -27,17 +27,106 @@ const cellColors = [
 let audioContext = null;
 let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
-let chordMode = 'off'; // 'off', 'open', 'power', 'stack', 'wide'
+let smartHarmony = false; // When true, notes are harmonically intelligent
 
-// Chord voicings based on perfect fifths (Pythagorean stacking)
-// All intervals in cents (100 cents = 1 semitone, 700 cents = perfect 5th)
-const chordVoicings = {
-    'off': [0], // Single note
-    'open': [0, 700], // Root + 5th
-    'power': [0, 700, 1200], // Root + 5th + octave
-    'stack': [0, 700, 1400], // Root + 5th + 9th (two stacked 5ths)
-    'wide': [0, 700, 1200, 1900] // Root + 5th + 8ve + 12th (spread across 2 octaves)
+// Smart Harmony System
+// Based on the circle of fifths - all notes derived from A (440Hz)
+// The harmonic "family" of notes that sound good together in orchestral tuning context
+const harmonicFamily = {
+    // Note name -> frequency ratios that work well with it
+    // Using Pythagorean tuning (stacked perfect fifths)
+    'A': { base: 440, fifthUp: 660, fifthDown: 293.33, octaveUp: 880, octaveDown: 220 },
+    'E': { base: 330, fifthUp: 495, fifthDown: 220, octaveUp: 660, octaveDown: 165 },
+    'D': { base: 293.66, fifthUp: 440, fifthDown: 196, octaveUp: 587.33, octaveDown: 146.83 },
+    'G': { base: 196, fifthUp: 293.66, fifthDown: 130.81, octaveUp: 392, octaveDown: 98 }
 };
+
+// Convert frequency to nearest note in the circle of fifths
+function frequencyToNote(freq) {
+    // Normalize to octave 4 range (220-440 Hz equivalent)
+    let normalized = freq;
+    while (normalized < 200) normalized *= 2;
+    while (normalized > 500) normalized /= 2;
+
+    // Find closest note
+    const notes = [
+        { name: 'A', freq: 440 },
+        { name: 'E', freq: 330 },
+        { name: 'D', freq: 293.66 },
+        { name: 'G', freq: 196 * 2 } // G in octave 4
+    ];
+
+    let closest = notes[0];
+    let minDiff = Math.abs(normalized - notes[0].freq);
+
+    for (const note of notes) {
+        const diff = Math.abs(normalized - note.freq);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closest = note;
+        }
+    }
+
+    return closest.name;
+}
+
+// Get harmonically compatible intervals based on what's already playing
+function getSmartIntervals(baseFreq) {
+    // If nothing is playing, return open fifth (orchestral default)
+    if (activeNotes.size === 0) {
+        return [0, 700]; // Root + perfect fifth
+    }
+
+    // Analyze currently playing notes
+    const playingFreqs = [];
+    activeNotes.forEach(note => {
+        if (!note.released) {
+            playingFreqs.push(note.baseFrequency);
+        }
+    });
+
+    if (playingFreqs.length === 0) {
+        return [0, 700];
+    }
+
+    // Get the note names of what's playing
+    const playingNotes = playingFreqs.map(f => frequencyToNote(f));
+    const newNote = frequencyToNote(baseFreq);
+
+    // Determine the harmonic relationship
+    // If the new note is a fifth away from existing notes, add octave for richness
+    // If it's the same note family, add fifth + octave for power
+    // If it's in the family but different, keep it open (just fifth)
+
+    const sameFamily = playingNotes.includes(newNote);
+
+    // Check if any playing note forms a fifth relationship with new note
+    const fifthRelations = {
+        'A': ['E', 'D'],
+        'E': ['A', 'B'],
+        'D': ['A', 'G'],
+        'G': ['D', 'C']
+    };
+
+    const hasFifthRelation = playingNotes.some(n =>
+        fifthRelations[newNote] && fifthRelations[newNote].includes(n)
+    );
+
+    // Build chord based on context
+    if (playingFreqs.length >= 3) {
+        // Already complex, keep new note simple for clarity
+        return [0]; // Single note
+    } else if (sameFamily) {
+        // Same note family - add power chord for thickness
+        return [0, 700, 1200]; // Root + 5th + octave
+    } else if (hasFifthRelation) {
+        // Fifth relationship - beautiful stacking, add ninth
+        return [0, 700, 1400]; // Root + 5th + 9th
+    } else {
+        // Different but compatible - open voicing
+        return [0, 700]; // Root + 5th
+    }
+}
 
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
@@ -56,7 +145,7 @@ function ensureAudioContext() {
     return audioContext;
 }
 
-// Play a tuning note with modulation support (supports chord mode)
+// Play a tuning note with modulation support (supports smart harmony)
 // Returns note object for modulation control
 function playTuningNote(cell) {
     if (!tuningEnabled) return null;
@@ -67,8 +156,8 @@ function playTuningNote(cell) {
     // Pick a random orchestral tuning frequency
     const baseFrequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
 
-    // Get chord voicing intervals
-    const intervals = chordVoicings[chordMode] || [0];
+    // Get chord voicing intervals - smart or single note
+    const intervals = smartHarmony ? getSmartIntervals(baseFrequency) : [0];
 
     // Arrays to hold all oscillators/filters for the chord
     const oscillators = [];
@@ -1011,15 +1100,15 @@ function initSynthVolume() {
     });
 }
 
-// Initialize chord mode control
-function initChordMode() {
-    const select = document.getElementById('chordSelect');
-    if (!select) return;
+// Initialize smart harmony toggle
+function initSmartHarmony() {
+    const toggle = document.getElementById('harmonyToggle');
+    if (!toggle) return;
 
-    select.value = chordMode;
+    toggle.checked = smartHarmony;
 
-    select.addEventListener('change', (e) => {
-        chordMode = e.target.value;
+    toggle.addEventListener('change', (e) => {
+        smartHarmony = e.target.checked;
     });
 }
 
@@ -1094,7 +1183,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSmoothScroll();
     initAudioPlayer();
     initSynthVolume();
-    initChordMode();
+    initSmartHarmony();
     initSynthManual();
 
     // Prime audio context on first interaction for instant response later

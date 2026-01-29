@@ -87,30 +87,60 @@ body {
     letter-spacing: 0.05em;
 }
 
-/* Chord Select Dropdown */
-.chord-select {
-    background: transparent;
-    border: 1px solid var(--gray-mid);
-    border-radius: 3px;
-    padding: 2px 4px;
-    font-size: 10px;
-    color: var(--white);
+/* Harmony Toggle */
+.harmony-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     cursor: pointer;
-    outline: none;
+    user-select: none;
+}
+
+.harmony-toggle input {
+    display: none;
+}
+
+.harmony-toggle-slider {
+    width: 28px;
+    height: 14px;
+    background: var(--gray-mid);
+    border-radius: 7px;
+    position: relative;
+    transition: background var(--transition);
+}
+
+.harmony-toggle-slider::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: var(--gray-light);
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
     transition: all var(--transition);
 }
 
-.chord-select:hover {
-    border-color: var(--gray-light);
+.harmony-toggle input:checked + .harmony-toggle-slider {
+    background: var(--white);
 }
 
-.chord-select:focus {
-    border-color: var(--white);
-}
-
-.chord-select option {
+.harmony-toggle input:checked + .harmony-toggle-slider::after {
+    left: 16px;
     background: var(--black);
+}
+
+.harmony-toggle-label {
+    font-size: 10px;
     color: var(--white);
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+    transition: opacity var(--transition);
+}
+
+.harmony-toggle:hover .harmony-toggle-label {
+    opacity: 1;
 }
 
 .synth-volume-icon {
@@ -641,6 +671,13 @@ body {
     font-style: italic;
 }
 
+.synth-manual-harmony-note {
+    font-size: 0.6rem;
+    opacity: 0.5;
+    margin-top: 8px;
+    line-height: 1.4;
+}
+
 /* Mobile */
 @media (max-width: 768px) {
     .nav {
@@ -655,9 +692,22 @@ body {
         width: 40px;
     }
 
-    .chord-select {
+    .harmony-toggle-slider {
+        width: 24px;
+        height: 12px;
+    }
+
+    .harmony-toggle-slider::after {
+        width: 8px;
+        height: 8px;
+    }
+
+    .harmony-toggle input:checked + .harmony-toggle-slider::after {
+        left: 14px;
+    }
+
+    .harmony-toggle-label {
         font-size: 9px;
-        padding: 1px 2px;
     }
 
     .nav-links {
