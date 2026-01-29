@@ -187,12 +187,12 @@ function getSmartIntervals(baseFreq) {
     return [0, 700];
 }
 
-// Active notes for modulation (cell element -> note object)
-const activeNotes = new Map();
+// Active notes - now tracked by pointerId for absolute reliability
+// Key: pointerId, Value: note object
+const notesByPointer = new Map();
 
-// Track active pointers globally - Key: pointerId, Value: { cell, startX, startY }
-// Using pointerId as key (not cell) ensures we can always find and clean up a pointer
-const activePointers = new Map();
+// Also track by cell for legacy compatibility (cell -> note)
+const activeNotes = new Map();
 
 // Initialize audio context immediately on first user interaction
 function ensureAudioContext() {
@@ -283,7 +283,7 @@ function playTuningNote(cell) {
         get filter() { return this.filters[0]; }
     };
 
-    // Track this note
+    // Track this note by cell (for modulation lookups)
     activeNotes.set(cell, note);
 
     // Trigger discovery on first note
@@ -378,27 +378,35 @@ function releaseNote(note) {
 
 // Force stop all active notes - emergency cleanup
 function stopAllNotes() {
+    // Release all notes tracked by pointer
+    notesByPointer.forEach((note, pointerId) => {
+        if (!note.released) {
+            releaseNote(note);
+            if (note.cell) fadeCell(note.cell, 0.5);
+        }
+    });
+    notesByPointer.clear();
+
+    // Also clean up any notes in activeNotes that might have been missed
     activeNotes.forEach((note, cell) => {
         if (!note.released) {
             releaseNote(note);
-            fadeCell(cell, 0.5); // Quick fade for emergency cleanup
+            fadeCell(cell, 0.5);
         }
     });
-    activePointers.clear();
+    activeNotes.clear();
 }
 
 // Release a specific pointer and its associated note
 function releasePointer(pointerId) {
-    const pointer = activePointers.get(pointerId);
-    if (!pointer) return;
+    const note = notesByPointer.get(pointerId);
+    if (!note) return;
 
-    activePointers.delete(pointerId);
+    notesByPointer.delete(pointerId);
 
-    const { cell } = pointer;
-    const note = activeNotes.get(cell);
-    if (note && !note.released) {
+    if (!note.released) {
         const fadeTime = releaseNote(note);
-        fadeCell(cell, fadeTime);
+        if (note.cell) fadeCell(note.cell, fadeTime);
     }
 }
 
@@ -730,7 +738,8 @@ function initAudioPlayer() {
 
     // Show player with tracks
     function showPlayer(projectName, tracks) {
-        // Grid tuning can play in parallel with music - no longer disabled
+        // Stop any playing synth notes when opening the player
+        stopAllNotes();
 
         currentPlaylist = tracks;
         projectEl.textContent = projectName;
@@ -1093,7 +1102,7 @@ function initGlobalSynthEvents() {
         e.preventDefault();
 
         // If this pointer is already tracking something, release it first
-        if (activePointers.has(e.pointerId)) {
+        if (notesByPointer.has(e.pointerId)) {
             releasePointer(e.pointerId);
         }
 
@@ -1102,38 +1111,37 @@ function initGlobalSynthEvents() {
         if (existingNote && !existingNote.released) {
             releaseNote(existingNote);
             fadeCell(cell, 0.1);
+            // Also remove from notesByPointer if it's there
+            notesByPointer.forEach((note, pid) => {
+                if (note === existingNote) notesByPointer.delete(pid);
+            });
         }
-
-        // Track this pointer by its ID (not by cell)
-        activePointers.set(e.pointerId, {
-            cell: cell,
-            startX: e.clientX,
-            startY: e.clientY
-        });
 
         // Play note
         const note = playTuningNote(cell);
         if (note) {
             note.startX = e.clientX;
             note.startY = e.clientY;
+            note.pointerId = e.pointerId; // Store pointerId on the note itself
+
+            // Track by pointer ID - this is the primary tracking mechanism
+            notesByPointer.set(e.pointerId, note);
+
             activateCell(cell);
         }
     }, { passive: false });
 
     // POINTERMOVE - modulate the note
     document.addEventListener('pointermove', (e) => {
-        const pointer = activePointers.get(e.pointerId);
-        if (!pointer) return;
+        const note = notesByPointer.get(e.pointerId);
+        if (!note || note.released) return;
 
-        const { cell } = pointer;
-        const note = activeNotes.get(cell);
-
-        if (note && !note.released && note.startX !== null) {
+        if (note.startX !== null) {
             const deltaX = e.clientX - note.startX;
             const deltaY = e.clientY - note.startY;
             updatePitchForDrag(note, deltaX);
             updateFilterForDrag(note, deltaY);
-            updateCellColor(cell, deltaX, deltaY);
+            if (note.cell) updateCellColor(note.cell, deltaX, deltaY);
         }
     });
 
@@ -1164,6 +1172,17 @@ function initGlobalSynthEvents() {
             stopAllNotes();
         }
     });
+
+    // Extra safety: any click outside the grid area stops all notes
+    document.addEventListener('click', (e) => {
+        const grid = document.getElementById('heroGrid');
+        if (grid && !grid.contains(e.target)) {
+            // Clicked outside the grid - stop any stuck notes
+            if (notesByPointer.size > 0 || activeNotes.size > 0) {
+                stopAllNotes();
+            }
+        }
+    }, true); // Use capture phase
 }
 
 // Initialize
@@ -1205,22 +1224,33 @@ window.addEventListener('blur', () => {
     stopAllNotes();
 });
 
-// Safety: periodically check for orphaned pointers (should never happen, but just in case)
+// Safety: periodically check for orphaned notes (reduced to 15 second threshold)
 setInterval(() => {
-    // If there are active pointers but no mouse buttons/touches are actually pressed, clean up
-    if (activePointers.size > 0) {
-        // We can't directly check if buttons are pressed, but we can check if notes are very old
-        const now = Date.now();
-        activeNotes.forEach((note, cell) => {
-            if (!note.released && audioContext) {
-                const age = audioContext.currentTime - note.startTime;
-                // If a note has been playing for more than 60 seconds, something is wrong
-                if (age > 60) {
-                    console.log('Cleaning up orphaned note');
-                    releaseNote(note);
-                    fadeCell(cell, 0.5);
-                }
+    if (!audioContext) return;
+
+    const now = audioContext.currentTime;
+
+    // Check notesByPointer (primary tracking)
+    notesByPointer.forEach((note, pointerId) => {
+        if (!note.released) {
+            const age = now - note.startTime;
+            if (age > 15) {
+                console.log('Cleaning up orphaned note (by pointer):', pointerId);
+                releasePointer(pointerId);
             }
-        });
-    }
-}, 10000); // Check every 10 seconds
+        }
+    });
+
+    // Check activeNotes (secondary tracking) for any stragglers
+    activeNotes.forEach((note, cell) => {
+        if (!note.released) {
+            const age = now - note.startTime;
+            if (age > 15) {
+                console.log('Cleaning up orphaned note (by cell)');
+                releaseNote(note);
+                fadeCell(cell, 0.5);
+                activeNotes.delete(cell);
+            }
+        }
+    });
+}, 3000); // Check every 3 seconds
