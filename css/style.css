@@ -299,6 +299,11 @@ body {
     position: relative;
     cursor: pointer;
     transition: transform var(--transition);
+    outline: none;
+}
+
+.film-card:focus {
+    outline: none;
 }
 
 .film-card:hover {
@@ -318,6 +323,11 @@ body {
     object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
+    outline: none;
+}
+
+.film-poster img:focus {
+    outline: none;
 }
 
 .film-info h3 {
@@ -435,6 +445,7 @@ body {
     margin-bottom: 2rem;
     width: 280px;
     cursor: pointer;
+    outline: none;
 }
 
 .embla-photo img {
@@ -443,6 +454,7 @@ body {
     object-fit: contain;
     filter: grayscale(100%);
     transition: filter var(--transition);
+    outline: none;
 }
 
 .embla-photo.playing img {
@@ -471,6 +483,7 @@ body {
     margin-bottom: 2rem;
     width: 280px;
     cursor: pointer;
+    outline: none;
 }
 
 .stone-birds-photo img {
@@ -479,6 +492,7 @@ body {
     object-fit: contain;
     filter: grayscale(100%);
     transition: filter var(--transition);
+    outline: none;
 }
 
 .stone-birds-photo.playing img {
@@ -489,6 +503,7 @@ body {
     margin-bottom: 2rem;
     width: 280px;
     cursor: pointer;
+    outline: none;
 }
 
 .the-thread-photo img {
@@ -497,6 +512,7 @@ body {
     object-fit: contain;
     filter: grayscale(100%);
     transition: filter var(--transition);
+    outline: none;
 }
 
 .the-thread-photo.playing img {
