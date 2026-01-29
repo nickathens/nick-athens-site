@@ -284,35 +284,51 @@ function initHeroGrid() {
                 isHolding = false;
             }
 
-            // Mouse events
+            // Mouse events - start on cell, track on document for full-screen drag
             cell.addEventListener('mousedown', (e) => {
                 startNote(e, e.clientX, e.clientY);
-            });
 
-            cell.addEventListener('mousemove', (e) => {
-                if (isHolding) {
-                    updateNote(e.clientX, e.clientY);
+                // Move and up handlers on document so drag works anywhere
+                function onMouseMove(moveEvent) {
+                    if (isHolding) {
+                        updateNote(moveEvent.clientX, moveEvent.clientY);
+                    }
                 }
+
+                function onMouseUp() {
+                    endNote();
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
             });
 
-            cell.addEventListener('mouseup', endNote);
-            cell.addEventListener('mouseleave', endNote);
-
-            // Touch events
+            // Touch events - start on cell, track on document for full-screen drag
             cell.addEventListener('touchstart', (e) => {
                 const touch = e.touches[0];
                 startNote(e, touch.clientX, touch.clientY);
-            }, { passive: false });
 
-            cell.addEventListener('touchmove', (e) => {
-                if (isHolding) {
-                    const touch = e.touches[0];
-                    updateNote(touch.clientX, touch.clientY);
+                // Move and end handlers on document so drag works anywhere
+                function onTouchMove(moveEvent) {
+                    if (isHolding && moveEvent.touches.length > 0) {
+                        const touch = moveEvent.touches[0];
+                        updateNote(touch.clientX, touch.clientY);
+                    }
                 }
-            }, { passive: false });
 
-            cell.addEventListener('touchend', endNote);
-            cell.addEventListener('touchcancel', endNote);
+                function onTouchEnd() {
+                    endNote();
+                    document.removeEventListener('touchmove', onTouchMove);
+                    document.removeEventListener('touchend', onTouchEnd);
+                    document.removeEventListener('touchcancel', onTouchEnd);
+                }
+
+                document.addEventListener('touchmove', onTouchMove, { passive: false });
+                document.addEventListener('touchend', onTouchEnd);
+                document.addEventListener('touchcancel', onTouchEnd);
+            }, { passive: false });
         }
         grid.appendChild(cell);
     }
