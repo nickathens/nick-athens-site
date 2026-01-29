@@ -26,6 +26,7 @@ const cellColors = [
 // Audio context for synthesized notes - initialize once and keep alive
 let audioContext = null;
 let tuningEnabled = true;
+let synthVolume = 0.5; // 0-1 range, default 50%
 
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
@@ -78,9 +79,11 @@ function playTuningNote(cell) {
     gainNode.connect(ctx.destination);
 
     // Quick attack, then sustain indefinitely (release handles fade)
+    // Use synthVolume to scale the gain (0.15 max * synthVolume)
+    const targetGain = 0.15 * synthVolume;
     gainNode.gain.value = 0;
     gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02);
+    gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.02);
     // No decay scheduled - note sustains until released
 
     oscillator.start(now);
@@ -925,12 +928,34 @@ function initAudioPlayer() {
     };
 }
 
+// Initialize synth volume control
+function initSynthVolume() {
+    const slider = document.getElementById('synthVolumeSlider');
+    if (!slider) return;
+
+    // Set initial value
+    slider.value = synthVolume * 100;
+
+    slider.addEventListener('input', (e) => {
+        synthVolume = e.target.value / 100;
+
+        // Update any currently playing notes to the new volume
+        activeNotes.forEach((note) => {
+            if (!note.released && note.gainNode) {
+                const targetGain = 0.15 * synthVolume;
+                note.gainNode.gain.setTargetAtTime(targetGain, note.gainNode.context.currentTime, 0.05);
+            }
+        });
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     initHeroGrid();
     initMobileNav();
     initSmoothScroll();
     initAudioPlayer();
+    initSynthVolume();
 
     // Prime audio context on first interaction for instant response later
     const primeAudio = () => {

@@ -33,11 +33,59 @@ body {
     right: 0;
     z-index: 1000;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
     align-items: center;
     padding: 1.5rem 3rem;
     background: rgba(10, 10, 10, 0.9);
     backdrop-filter: blur(10px);
+}
+
+/* Synth Volume Control */
+.synth-volume {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0.4;
+    transition: opacity var(--transition);
+}
+
+.synth-volume:hover {
+    opacity: 0.8;
+}
+
+.synth-volume-icon {
+    width: 16px;
+    height: 16px;
+    fill: var(--white);
+}
+
+.synth-volume-slider {
+    width: 60px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
+    background: var(--gray-mid);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.synth-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    background: var(--white);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.synth-volume-slider::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    background: var(--white);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
 }
 
 .nav-logo {
@@ -436,6 +484,14 @@ body {
 @media (max-width: 768px) {
     .nav {
         padding: 1rem 1.5rem;
+    }
+
+    .synth-volume {
+        opacity: 0.3;
+    }
+
+    .synth-volume-slider {
+        width: 40px;
     }
 
     .nav-links {
