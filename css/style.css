@@ -1050,14 +1050,6 @@ body {
     filter: grayscale(0%);
 }
 
-.film-card.playing::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border: 2px solid var(--white);
-    pointer-events: none;
-}
-
 @media (max-width: 480px) {
     .audio-player {
         width: calc(100% - 40px);
