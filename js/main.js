@@ -1333,8 +1333,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('touchstart', primeAudio, { once: true });
 });
 
-// Logo click patterns - simple, fast patterns that won't lag
-// Only 3 patterns, limited notes per ring, quick execution
+// Logo click patterns - multiple beautiful symmetrical patterns
+// Each pattern uses its own tracking to not interfere with manual play
 
 let waveInProgress = false;
 
@@ -1363,40 +1363,185 @@ function playWavePattern() {
         return (cell && cell.dataset.synthCell === 'true') ? cell : null;
     }
 
-    // Generate simple ring pattern (Chebyshev distance)
-    function getRing(distance) {
-        const ring = [];
-        for (let r = centerRow - distance; r <= centerRow + distance; r++) {
-            for (let c = centerCol - distance; c <= centerCol + distance; c++) {
-                const dist = Math.max(Math.abs(r - centerRow), Math.abs(c - centerCol));
-                if (dist === distance) {
-                    const cell = getCellAt(r, c);
-                    if (cell) ring.push(cell);
+    // Pattern generators - each returns array of "rings" (groups of cells to play simultaneously)
+
+    // 1. Circular (Chebyshev distance) - expanding squares
+    function patternCircular() {
+        const rings = [];
+        const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
+        for (let d = 1; d <= maxDist; d++) {
+            const ring = [];
+            for (let r = centerRow - d; r <= centerRow + d; r++) {
+                for (let c = centerCol - d; c <= centerCol + d; c++) {
+                    if (Math.max(Math.abs(r - centerRow), Math.abs(c - centerCol)) === d) {
+                        const cell = getCellAt(r, c);
+                        if (cell) ring.push(cell);
+                    }
                 }
             }
+            if (ring.length > 0) rings.push(ring);
         }
-        return ring;
+        return rings;
     }
 
-    // Get max distance needed
-    const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
-
-    // Build rings
-    const rings = [];
-    for (let d = 1; d <= maxDist; d++) {
-        const ring = getRing(d);
-        if (ring.length > 0) rings.push(ring);
+    // 2. Diamond (Manhattan distance) - expanding diamonds
+    function patternDiamond() {
+        const rings = [];
+        const maxDist = centerRow + centerCol + 2;
+        for (let d = 1; d <= maxDist; d++) {
+            const ring = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (Math.abs(r - centerRow) + Math.abs(c - centerCol) === d) {
+                        const cell = getCellAt(r, c);
+                        if (cell) ring.push(cell);
+                    }
+                }
+            }
+            if (ring.length > 0) rings.push(ring);
+        }
+        return rings;
     }
+
+    // 3. Cross - axes first, then fills
+    function patternCross() {
+        const rings = [];
+        const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
+
+        // First: expand along axes (up, down, left, right)
+        for (let d = 1; d <= maxDist; d++) {
+            const ring = [];
+            // Up
+            const up = getCellAt(centerRow - d, centerCol);
+            if (up) ring.push(up);
+            // Down
+            const down = getCellAt(centerRow + d, centerCol);
+            if (down) ring.push(down);
+            // Left
+            const left = getCellAt(centerRow, centerCol - d);
+            if (left) ring.push(left);
+            // Right
+            const right = getCellAt(centerRow, centerCol + d);
+            if (right) ring.push(right);
+
+            if (ring.length > 0) rings.push(ring);
+        }
+        return rings;
+    }
+
+    // 4. X-pattern - diagonals only
+    function patternX() {
+        const rings = [];
+        const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
+
+        for (let d = 1; d <= maxDist; d++) {
+            const ring = [];
+            // Top-left
+            const tl = getCellAt(centerRow - d, centerCol - d);
+            if (tl) ring.push(tl);
+            // Top-right
+            const tr = getCellAt(centerRow - d, centerCol + d);
+            if (tr) ring.push(tr);
+            // Bottom-left
+            const bl = getCellAt(centerRow + d, centerCol - d);
+            if (bl) ring.push(bl);
+            // Bottom-right
+            const br = getCellAt(centerRow + d, centerCol + d);
+            if (br) ring.push(br);
+
+            if (ring.length > 0) rings.push(ring);
+        }
+        return rings;
+    }
+
+    // 5. Horizontal sweep - columns fire left to right
+    function patternHorizontalSweep() {
+        const rings = [];
+        for (let c = 0; c < cols; c++) {
+            const ring = [];
+            for (let r = 0; r < rows; r++) {
+                const cell = getCellAt(r, c);
+                if (cell) ring.push(cell);
+            }
+            if (ring.length > 0) rings.push(ring);
+        }
+        return rings;
+    }
+
+    // 6. Vertical sweep - rows fire top to bottom
+    function patternVerticalSweep() {
+        const rings = [];
+        for (let r = 0; r < rows; r++) {
+            const ring = [];
+            for (let c = 0; c < cols; c++) {
+                const cell = getCellAt(r, c);
+                if (cell) ring.push(cell);
+            }
+            if (ring.length > 0) rings.push(ring);
+        }
+        return rings;
+    }
+
+    // 7. Star burst - cross then X alternating
+    function patternStarburst() {
+        const rings = [];
+        const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
+
+        for (let d = 1; d <= maxDist; d++) {
+            // Axes
+            const axisRing = [];
+            const up = getCellAt(centerRow - d, centerCol);
+            if (up) axisRing.push(up);
+            const down = getCellAt(centerRow + d, centerCol);
+            if (down) axisRing.push(down);
+            const left = getCellAt(centerRow, centerCol - d);
+            if (left) axisRing.push(left);
+            const right = getCellAt(centerRow, centerCol + d);
+            if (right) axisRing.push(right);
+            if (axisRing.length > 0) rings.push(axisRing);
+
+            // Diagonals
+            const diagRing = [];
+            const tl = getCellAt(centerRow - d, centerCol - d);
+            if (tl) diagRing.push(tl);
+            const tr = getCellAt(centerRow - d, centerCol + d);
+            if (tr) diagRing.push(tr);
+            const bl = getCellAt(centerRow + d, centerCol - d);
+            if (bl) diagRing.push(bl);
+            const br = getCellAt(centerRow + d, centerCol + d);
+            if (br) diagRing.push(br);
+            if (diagRing.length > 0) rings.push(diagRing);
+        }
+        return rings;
+    }
+
+    // Pick a random pattern
+    const patterns = [
+        patternCircular,
+        patternDiamond,
+        patternCross,
+        patternX,
+        patternHorizontalSweep,
+        patternVerticalSweep,
+        patternStarburst
+    ];
+
+    const chosenPattern = patterns[Math.floor(Math.random() * patterns.length)];
+    const rings = chosenPattern();
 
     // Ensure audio context is ready
     ensureAudioContext();
 
     // Timing
-    const ringDelay = 80; // ms between rings
-    const noteDuration = 200; // how long each note plays
+    const ringDelay = 70; // ms between rings
+    const noteDuration = 180; // how long each note plays
 
-    // Limit concurrent notes
-    const maxNotesPerRing = 8;
+    // Limit concurrent notes per ring to prevent overload
+    const maxNotesPerRing = 6;
+
+    // Track notes from this pattern separately using a unique base ID
+    const patternBaseId = Date.now();
+    let noteCounter = 0;
 
     // Play each ring
     rings.forEach((ring, ringIndex) => {
@@ -1404,7 +1549,7 @@ function playWavePattern() {
             // If ring has too many cells, pick random subset
             let cellsToPlay = ring;
             if (ring.length > maxNotesPerRing) {
-                cellsToPlay = ring.sort(() => Math.random() - 0.5).slice(0, maxNotesPerRing);
+                cellsToPlay = [...ring].sort(() => Math.random() - 0.5).slice(0, maxNotesPerRing);
             }
 
             cellsToPlay.forEach(cell => {
@@ -1412,8 +1557,9 @@ function playWavePattern() {
                 if (note) {
                     activateCell(cell);
 
-                    // Use unique ID for tracking
-                    const fakePointerId = -(Date.now() * Math.random());
+                    // Use unique negative ID for pattern notes (won't conflict with real pointers)
+                    noteCounter++;
+                    const fakePointerId = -(patternBaseId + noteCounter);
                     notesByPointer.set(fakePointerId, note);
 
                     // Release after duration
