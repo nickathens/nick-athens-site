@@ -1333,161 +1333,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('touchstart', primeAudio, { once: true });
 });
 
-// Logo click patterns - symmetrical waves radiating from center
-// Each pattern is an array of "rings" - cells at same distance from center play together
-// Cell indices are relative to center (row, col offsets)
+// Logo click patterns - simple, fast patterns that won't lag
+// Only 3 patterns, limited notes per ring, quick execution
 
-function generateWavePatterns(cols, rows) {
-    const patterns = [];
-    const centerRow = Math.floor(rows / 2);
-    const centerCol = Math.floor(cols / 2);
-
-    // Pattern 1: Classic circular wave (distance-based rings)
-    const circularWave = [];
-    const maxDist = Math.max(centerRow, centerCol) + 1;
-    for (let d = 1; d <= maxDist; d++) {
-        const ring = [];
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const dist = Math.max(Math.abs(r - centerRow), Math.abs(c - centerCol));
-                if (dist === d) {
-                    ring.push({ row: r, col: c });
-                }
-            }
-        }
-        if (ring.length > 0) circularWave.push(ring);
-    }
-    patterns.push({ name: 'circular', rings: circularWave });
-
-    // Pattern 2: Diamond wave (Manhattan distance)
-    const diamondWave = [];
-    for (let d = 1; d <= centerRow + centerCol; d++) {
-        const ring = [];
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const dist = Math.abs(r - centerRow) + Math.abs(c - centerCol);
-                if (dist === d) {
-                    ring.push({ row: r, col: c });
-                }
-            }
-        }
-        if (ring.length > 0) diamondWave.push(ring);
-    }
-    patterns.push({ name: 'diamond', rings: diamondWave });
-
-    // Pattern 3: Cross explosion (axes first, then diagonals)
-    const crossWave = [];
-    // First: horizontal and vertical axes
-    for (let d = 1; d <= Math.max(centerRow, centerCol); d++) {
-        const ring = [];
-        // Up
-        if (centerRow - d >= 0) ring.push({ row: centerRow - d, col: centerCol });
-        // Down
-        if (centerRow + d < rows) ring.push({ row: centerRow + d, col: centerCol });
-        // Left
-        if (centerCol - d >= 0) ring.push({ row: centerRow, col: centerCol - d });
-        // Right
-        if (centerCol + d < cols) ring.push({ row: centerRow, col: centerCol + d });
-        if (ring.length > 0) crossWave.push(ring);
-    }
-    // Then: diagonal axes
-    for (let d = 1; d <= Math.max(centerRow, centerCol); d++) {
-        const ring = [];
-        // Top-left
-        if (centerRow - d >= 0 && centerCol - d >= 0) ring.push({ row: centerRow - d, col: centerCol - d });
-        // Top-right
-        if (centerRow - d >= 0 && centerCol + d < cols) ring.push({ row: centerRow - d, col: centerCol + d });
-        // Bottom-left
-        if (centerRow + d < rows && centerCol - d >= 0) ring.push({ row: centerRow + d, col: centerCol - d });
-        // Bottom-right
-        if (centerRow + d < rows && centerCol + d < cols) ring.push({ row: centerRow + d, col: centerCol + d });
-        if (ring.length > 0) crossWave.push(ring);
-    }
-    patterns.push({ name: 'cross', rings: crossWave });
-
-    // Pattern 4: Spiral outward (clockwise from top)
-    const spiralWave = [];
-    const visited = new Set();
-    visited.add(`${centerRow},${centerCol}`);
-    let r = centerRow, c = centerCol;
-    // Directions: right, down, left, up
-    const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
-    let dirIdx = 0;
-    let steps = 1;
-    let stepCount = 0;
-    let turnCount = 0;
-
-    while (visited.size < rows * cols) {
-        const [dr, dc] = dirs[dirIdx];
-        const nr = r + dr;
-        const nc = c + dc;
-
-        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited.has(`${nr},${nc}`)) {
-            visited.add(`${nr},${nc}`);
-            spiralWave.push([{ row: nr, col: nc }]);
-            r = nr;
-            c = nc;
-        }
-
-        stepCount++;
-        if (stepCount >= steps) {
-            dirIdx = (dirIdx + 1) % 4;
-            stepCount = 0;
-            turnCount++;
-            if (turnCount >= 2) {
-                steps++;
-                turnCount = 0;
-            }
-        }
-
-        // Safety break
-        if (spiralWave.length > rows * cols) break;
-    }
-    patterns.push({ name: 'spiral', rings: spiralWave });
-
-    // Pattern 5: X-pattern (diagonals first, then fills)
-    const xWave = [];
-    for (let d = 1; d <= Math.max(centerRow, centerCol, rows - centerRow, cols - centerCol); d++) {
-        const ring = [];
-        // All 4 diagonal directions
-        if (centerRow - d >= 0 && centerCol - d >= 0) ring.push({ row: centerRow - d, col: centerCol - d });
-        if (centerRow - d >= 0 && centerCol + d < cols) ring.push({ row: centerRow - d, col: centerCol + d });
-        if (centerRow + d < rows && centerCol - d >= 0) ring.push({ row: centerRow + d, col: centerCol - d });
-        if (centerRow + d < rows && centerCol + d < cols) ring.push({ row: centerRow + d, col: centerCol + d });
-        if (ring.length > 0) xWave.push(ring);
-    }
-    patterns.push({ name: 'x-pattern', rings: xWave });
-
-    // Pattern 6: Horizontal sweep (left to right)
-    const hSweep = [];
-    for (let c = 0; c < cols; c++) {
-        if (c === centerCol) continue; // Skip center column
-        const ring = [];
-        for (let r = 0; r < rows; r++) {
-            if (r === centerRow && c === centerCol) continue;
-            ring.push({ row: r, col: c });
-        }
-        if (ring.length > 0) hSweep.push(ring);
-    }
-    patterns.push({ name: 'horizontal', rings: hSweep });
-
-    // Pattern 7: Vertical sweep (top to bottom)
-    const vSweep = [];
-    for (let r = 0; r < rows; r++) {
-        if (r === centerRow) continue; // Skip center row
-        const ring = [];
-        for (let c = 0; c < cols; c++) {
-            if (r === centerRow && c === centerCol) continue;
-            ring.push({ row: r, col: c });
-        }
-        if (ring.length > 0) vSweep.push(ring);
-    }
-    patterns.push({ name: 'vertical', rings: vSweep });
-
-    return patterns;
-}
-
-// Play a wave pattern from the center logo
 let waveInProgress = false;
 
 function playWavePattern() {
@@ -1502,66 +1350,83 @@ function playWavePattern() {
 
     const cols = parseInt(grid.style.getPropertyValue('--cols')) || 11;
     const rows = parseInt(grid.style.getPropertyValue('--rows')) || 9;
-    const cells = grid.querySelectorAll('.cell:not(.logo-cell)');
-
-    // Generate patterns for current grid size
-    const patterns = generateWavePatterns(cols, rows);
-
-    // Pick a random pattern
-    const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+    const centerRow = Math.floor(rows / 2);
+    const centerCol = Math.floor(cols / 2);
+    const allCells = grid.querySelectorAll('.cell');
 
     // Get cell at grid position
     function getCellAt(row, col) {
-        const centerRow = Math.floor(rows / 2);
-        const centerCol = Math.floor(cols / 2);
-        const centerIndex = centerRow * cols + centerCol;
+        if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+        if (row === centerRow && col === centerCol) return null; // Logo cell
         const index = row * cols + col;
-
-        // Adjust for center cell (logo) not being in cells list
-        let adjustedIndex = index;
-        if (index > centerIndex) adjustedIndex--;
-        if (index === centerIndex) return null; // Logo cell
-
-        // Actually, cells NodeList doesn't include logo cell, so we need to map differently
-        // Let's iterate through all cells and find by position
-        const allCells = grid.querySelectorAll('.cell');
-        return allCells[index] || null;
+        const cell = allCells[index];
+        return (cell && cell.dataset.synthCell === 'true') ? cell : null;
     }
 
-    // Timing: 60ms between rings for fast, exciting cascade
-    const ringDelay = 60;
-    const noteDuration = 150; // How long each note plays before releasing
+    // Generate simple ring pattern (Chebyshev distance)
+    function getRing(distance) {
+        const ring = [];
+        for (let r = centerRow - distance; r <= centerRow + distance; r++) {
+            for (let c = centerCol - distance; c <= centerCol + distance; c++) {
+                const dist = Math.max(Math.abs(r - centerRow), Math.abs(c - centerCol));
+                if (dist === distance) {
+                    const cell = getCellAt(r, c);
+                    if (cell) ring.push(cell);
+                }
+            }
+        }
+        return ring;
+    }
+
+    // Get max distance needed
+    const maxDist = Math.max(centerRow, centerCol, rows - centerRow - 1, cols - centerCol - 1) + 1;
+
+    // Build rings
+    const rings = [];
+    for (let d = 1; d <= maxDist; d++) {
+        const ring = getRing(d);
+        if (ring.length > 0) rings.push(ring);
+    }
 
     // Ensure audio context is ready
     ensureAudioContext();
 
-    // Play each ring with delay
-    pattern.rings.forEach((ring, ringIndex) => {
+    // Timing
+    const ringDelay = 80; // ms between rings
+    const noteDuration = 200; // how long each note plays
+
+    // Limit concurrent notes
+    const maxNotesPerRing = 8;
+
+    // Play each ring
+    rings.forEach((ring, ringIndex) => {
         setTimeout(() => {
-            ring.forEach(pos => {
-                const cell = getCellAt(pos.row, pos.col);
-                if (cell && cell.dataset.synthCell === 'true') {
-                    // Play note
-                    const note = playTuningNote(cell);
-                    if (note) {
-                        activateCell(cell);
+            // If ring has too many cells, pick random subset
+            let cellsToPlay = ring;
+            if (ring.length > maxNotesPerRing) {
+                cellsToPlay = ring.sort(() => Math.random() - 0.5).slice(0, maxNotesPerRing);
+            }
 
-                        // Track with a fake pointer ID (negative to avoid conflicts)
-                        const fakePointerId = -(Date.now() + Math.random() * 1000);
-                        notesByPointer.set(fakePointerId, note);
+            cellsToPlay.forEach(cell => {
+                const note = playTuningNote(cell);
+                if (note) {
+                    activateCell(cell);
 
-                        // Release after short duration
-                        setTimeout(() => {
-                            releasePointer(fakePointerId);
-                        }, noteDuration);
-                    }
+                    // Use unique ID for tracking
+                    const fakePointerId = -(Date.now() * Math.random());
+                    notesByPointer.set(fakePointerId, note);
+
+                    // Release after duration
+                    setTimeout(() => {
+                        releasePointer(fakePointerId);
+                    }, noteDuration);
                 }
             });
         }, ringIndex * ringDelay);
     });
 
-    // Reset wave flag after pattern completes
-    const totalDuration = pattern.rings.length * ringDelay + noteDuration + 500;
+    // Reset flag after pattern completes
+    const totalDuration = rings.length * ringDelay + noteDuration + 300;
     setTimeout(() => {
         waveInProgress = false;
     }, totalDuration);
