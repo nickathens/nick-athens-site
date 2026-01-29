@@ -131,6 +131,10 @@ function getSmartIntervals(baseFreq) {
 // Active notes for modulation (cell element -> note object)
 const activeNotes = new Map();
 
+// Global tracking for mouse/touch state to prevent stuck notes
+let globalMouseDown = false;
+let globalTouchActive = new Set(); // Track active touch identifiers
+
 // Safety timeout - kill any note after 30 seconds max (prevents infinite drones)
 const MAX_NOTE_DURATION = 30000;
 
@@ -346,14 +350,15 @@ function stopAllNotes() {
     });
 }
 
-// Periodic cleanup - catch any orphaned notes every 5 seconds
+// Periodic cleanup - catch any orphaned notes every 2 seconds (more aggressive)
 setInterval(() => {
     if (audioContext) {
         const now = audioContext.currentTime;
         activeNotes.forEach((note, cell) => {
-            // If a note has been playing for more than 15 seconds without interaction, kill it
-            if (!note.released && (now - note.startTime) > 15) {
+            // If a note has been playing for more than 10 seconds without interaction, kill it
+            if (!note.released && (now - note.startTime) > 10) {
                 console.log('Periodic cleanup: releasing orphaned note');
+                globalMouseDown = false;
                 releaseNote(note);
                 fadeCell(cell, 0.5);
                 if (cell._cleanupHandlers) {
@@ -362,7 +367,7 @@ setInterval(() => {
             }
         });
     }
-}, 5000);
+}, 2000);
 
 // Convert hex to HSL
 function hexToHsl(hex) {
@@ -554,6 +559,9 @@ function initHeroGrid() {
                 // Only respond to left mouse button (button 0)
                 if (e.button !== 0) return;
 
+                // Set global mouse state
+                globalMouseDown = true;
+
                 // Clean up any previous handlers that weren't properly removed
                 if (cell._cleanupHandlers) {
                     cell._cleanupHandlers();
@@ -562,6 +570,12 @@ function initHeroGrid() {
                 startNote(e, e.clientX, e.clientY);
 
                 function onMouseMove(moveEvent) {
+                    // Safety check - if mouse isn't actually down, release
+                    if (!globalMouseDown || (moveEvent.buttons & 1) === 0) {
+                        endNote();
+                        cleanup();
+                        return;
+                    }
                     const note = activeNotes.get(cell);
                     if (note && !note.released) {
                         updateNote(moveEvent.clientX, moveEvent.clientY);
@@ -569,7 +583,7 @@ function initHeroGrid() {
                 }
 
                 function onMouseUp(upEvent) {
-                    // Release on any mouse button up
+                    globalMouseDown = false;
                     endNote();
                     cleanup();
                 }
@@ -577,12 +591,24 @@ function initHeroGrid() {
                 function cleanup() {
                     document.removeEventListener('mousemove', onMouseMove);
                     document.removeEventListener('mouseup', onMouseUp);
+                    document.removeEventListener('mouseleave', onMouseLeave);
                     document.removeEventListener('contextmenu', onContextMenu);
                     cell._cleanupHandlers = null;
                 }
 
+                // Release if mouse leaves the document entirely
+                function onMouseLeave(leaveEvent) {
+                    // Only if actually leaving the document (not entering a child)
+                    if (leaveEvent.relatedTarget === null) {
+                        globalMouseDown = false;
+                        endNote();
+                        cleanup();
+                    }
+                }
+
                 // Also release on right-click context menu
                 function onContextMenu() {
+                    globalMouseDown = false;
                     endNote();
                     cleanup();
                 }
@@ -591,6 +617,7 @@ function initHeroGrid() {
 
                 document.addEventListener('mousemove', onMouseMove);
                 document.addEventListener('mouseup', onMouseUp);
+                document.addEventListener('mouseleave', onMouseLeave);
                 document.addEventListener('contextmenu', onContextMenu);
             });
 
@@ -606,8 +633,16 @@ function initHeroGrid() {
 
                 // Track the touch identifier so we only respond to our touch
                 const touchId = touch.identifier;
+                globalTouchActive.add(touchId);
 
                 function onTouchMove(moveEvent) {
+                    // Safety check - if our touch isn't in global tracking, something went wrong
+                    if (!globalTouchActive.has(touchId)) {
+                        endNote();
+                        cleanup();
+                        return;
+                    }
+
                     // Find our specific touch
                     let ourTouch = null;
                     for (let i = 0; i < moveEvent.touches.length; i++) {
@@ -622,6 +657,10 @@ function initHeroGrid() {
                         if (note && !note.released) {
                             updateNote(ourTouch.clientX, ourTouch.clientY);
                         }
+                    } else {
+                        // Our touch is gone but touchend didn't fire - clean up
+                        endNote();
+                        cleanup();
                     }
                 }
 
@@ -636,12 +675,14 @@ function initHeroGrid() {
                     }
 
                     if (ourTouchEnded) {
+                        globalTouchActive.delete(touchId);
                         endNote();
                         cleanup();
                     }
                 }
 
                 function cleanup() {
+                    globalTouchActive.delete(touchId);
                     document.removeEventListener('touchmove', onTouchMove);
                     document.removeEventListener('touchend', onTouchEnd);
                     document.removeEventListener('touchcancel', onTouchEnd);
@@ -1219,6 +1260,33 @@ document.addEventListener('contextmenu', (e) => {
     // If right-clicking on or near the grid, release all notes
     const grid = document.getElementById('heroGrid');
     if (grid && grid.contains(e.target)) {
+        globalMouseDown = false;
         stopAllNotes();
     }
 });
+
+// Global mouseup handler - catches any missed mouseup events
+document.addEventListener('mouseup', () => {
+    globalMouseDown = false;
+});
+
+// Periodically check for stuck interaction states (every 500ms)
+setInterval(() => {
+    // If globalMouseDown is true but no mouse buttons are pressed, reset
+    // This catches edge cases where mouseup was missed
+    if (globalMouseDown) {
+        // We can't directly check mouse state, but if there are notes playing
+        // and no active touch events, check with a heuristic
+        if (activeNotes.size > 0 && globalTouchActive.size === 0) {
+            // If any notes have been playing for more than 5 seconds without
+            // any cleanup handlers attached, they're likely stuck
+            activeNotes.forEach((note, cell) => {
+                if (!note.released && !cell._cleanupHandlers) {
+                    console.log('Detected orphaned note, releasing');
+                    releaseNote(note);
+                    fadeCell(cell, 0.5);
+                }
+            });
+        }
+    }
+}, 500);
