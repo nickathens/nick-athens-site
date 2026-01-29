@@ -1533,8 +1533,8 @@ function playWavePattern() {
     ensureAudioContext();
 
     // Timing
-    const ringDelay = 70; // ms between rings
-    const noteDuration = 180; // how long each note plays
+    const ringDelay = 140; // ms between rings (slower cascade)
+    const noteDuration = 300; // how long each note plays (longer sustain)
 
     // Limit concurrent notes per ring to prevent overload
     const maxNotesPerRing = 6;
