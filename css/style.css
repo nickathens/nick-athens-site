@@ -299,11 +299,14 @@ body {
     position: relative;
     cursor: pointer;
     transition: transform var(--transition);
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.film-card:focus {
-    outline: none;
+.film-card:focus,
+.film-card:focus-visible,
+.film-card:active {
+    outline: none !important;
 }
 
 .film-card:hover {
@@ -323,11 +326,14 @@ body {
     object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.film-poster img:focus {
-    outline: none;
+.film-poster img:focus,
+.film-poster img:focus-visible,
+.film-poster img:active {
+    outline: none !important;
 }
 
 .film-info h3 {
@@ -442,17 +448,19 @@ body {
 .embla-photo {
     margin-bottom: 2rem;
     width: 220px;
+    height: 220px;
     cursor: pointer;
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .embla-photo img {
     width: 100%;
-    height: auto;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
-    outline: none;
+    outline: none !important;
 }
 
 .embla-photo.playing img {
@@ -480,17 +488,19 @@ body {
 .stone-birds-photo {
     margin-bottom: 2rem;
     width: 220px;
+    height: 220px;
     cursor: pointer;
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .stone-birds-photo img {
     width: 100%;
-    height: auto;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
-    outline: none;
+    outline: none !important;
 }
 
 .stone-birds-photo.playing img {
@@ -500,17 +510,19 @@ body {
 .the-thread-photo {
     margin-bottom: 2rem;
     width: 220px;
+    height: 220px;
     cursor: pointer;
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .the-thread-photo img {
     width: 100%;
-    height: auto;
-    object-fit: contain;
+    height: 100%;
+    object-fit: cover;
     filter: grayscale(100%);
     transition: filter var(--transition);
-    outline: none;
+    outline: none !important;
 }
 
 .the-thread-photo.playing img {
