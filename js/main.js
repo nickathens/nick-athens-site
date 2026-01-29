@@ -748,6 +748,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
         }, 300);
     }
 
@@ -868,6 +869,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
             card.classList.add('playing');
 
             showPlayer(title, tracks);
@@ -913,6 +915,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
             emblaPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
@@ -954,6 +957,7 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
             athosOstPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
@@ -1006,9 +1010,38 @@ function initAudioPlayer() {
             document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
             document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
             stoneBirdsPhoto.classList.add('playing');
 
             showPlayer(albumName, tracks);
+            audio.play();
+        });
+    }
+
+    // The Thread photo click
+    const theThreadPhoto = document.querySelector('.the-thread-photo');
+    if (theThreadPhoto) {
+        theThreadPhoto.addEventListener('click', () => {
+            const tracksData = theThreadPhoto.dataset.tracks;
+            if (!tracksData) return;
+
+            let tracks;
+            try {
+                tracks = JSON.parse(tracksData);
+            } catch (e) {
+                console.error('Failed to parse The Thread tracks data:', e);
+                return;
+            }
+
+            // Remove playing class from all cards and solo photos
+            document.querySelectorAll('.film-card.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.embla-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.athos-ost-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.stone-birds-photo.playing').forEach(c => c.classList.remove('playing'));
+            document.querySelectorAll('.the-thread-photo.playing').forEach(c => c.classList.remove('playing'));
+            theThreadPhoto.classList.add('playing');
+
+            showPlayer('The Thread', tracks);
             audio.play();
         });
     }

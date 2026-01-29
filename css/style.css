@@ -413,7 +413,8 @@ body {
 /* Solo Section */
 .solo-projects-row {
     display: flex;
-    gap: 4rem;
+    gap: 2rem;
+    flex-wrap: wrap;
 }
 
 .solo-project {
@@ -435,15 +436,12 @@ body {
 }
 
 .subsection-desc {
-    font-size: 1rem;
-    opacity: 0.6;
-    max-width: 600px;
-    margin-bottom: 2rem;
+    display: none;
 }
 
 .embla-photo {
     margin-bottom: 2rem;
-    width: 280px;
+    width: 220px;
     cursor: pointer;
     outline: none;
 }
@@ -481,7 +479,7 @@ body {
 
 .stone-birds-photo {
     margin-bottom: 2rem;
-    width: 280px;
+    width: 220px;
     cursor: pointer;
     outline: none;
 }
@@ -501,7 +499,7 @@ body {
 
 .the-thread-photo {
     margin-bottom: 2rem;
-    width: 280px;
+    width: 220px;
     cursor: pointer;
     outline: none;
 }
