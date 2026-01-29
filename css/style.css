@@ -147,6 +147,11 @@ body {
     width: 16px;
     height: 16px;
     fill: var(--white);
+    transition: opacity 0.15s;
+}
+
+.synth-volume-icon:hover {
+    opacity: 0.7;
 }
 
 .synth-volume-slider {
@@ -912,6 +917,11 @@ body {
     height: 18px;
     fill: var(--white);
     opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+.audio-player-volume .volume-icon:hover {
+    opacity: 1;
 }
 
 .audio-player-volume .volume-slider {

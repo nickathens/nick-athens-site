@@ -795,10 +795,56 @@ function initAudioPlayer() {
         audio.currentTime = percent * audio.duration;
     });
 
-    // Volume slider
+    // Volume slider and mute toggle
+    let playerMuted = false;
+    let playerVolumeBeforeMute = 0.5;
+    const volumeIcon = document.getElementById('playerVolumeIcon');
+
+    function updatePlayerVolumeIcon() {
+        if (!volumeIcon) return;
+
+        const speaker = volumeIcon.querySelector('.speaker');
+        const waves = volumeIcon.querySelector('.waves');
+        const muted = volumeIcon.querySelector('.muted');
+
+        if (playerMuted) {
+            speaker.style.display = 'none';
+            waves.style.display = 'none';
+            muted.style.display = 'block';
+        } else {
+            speaker.style.display = 'block';
+            waves.style.display = 'block';
+            muted.style.display = 'none';
+        }
+    }
+
     if (volumeSlider) {
         volumeSlider.addEventListener('input', (e) => {
             audio.volume = e.target.value / 100;
+
+            // If unmuting via slider, update mute state
+            if (playerMuted && audio.volume > 0) {
+                playerMuted = false;
+                updatePlayerVolumeIcon();
+            }
+        });
+    }
+
+    if (volumeIcon) {
+        volumeIcon.addEventListener('click', () => {
+            if (playerMuted) {
+                // Unmute - restore previous volume
+                playerMuted = false;
+                audio.volume = playerVolumeBeforeMute;
+                if (volumeSlider) volumeSlider.value = audio.volume * 100;
+            } else {
+                // Mute - save current volume and set to 0
+                playerVolumeBeforeMute = audio.volume;
+                playerMuted = true;
+                audio.volume = 0;
+                if (volumeSlider) volumeSlider.value = 0;
+            }
+            updatePlayerVolumeIcon();
         });
     }
 
@@ -975,8 +1021,31 @@ function initAudioPlayer() {
 }
 
 // Initialize synth volume control
+let synthMuted = false;
+let synthVolumeBeforeMute = 0.5;
+
+function updateSynthVolumeIcon() {
+    const icon = document.getElementById('synthVolumeIcon');
+    if (!icon) return;
+
+    const speaker = icon.querySelector('.speaker');
+    const waves = icon.querySelector('.waves');
+    const muted = icon.querySelector('.muted');
+
+    if (synthMuted) {
+        speaker.style.display = 'none';
+        waves.style.display = 'none';
+        muted.style.display = 'block';
+    } else {
+        speaker.style.display = 'block';
+        waves.style.display = 'block';
+        muted.style.display = 'none';
+    }
+}
+
 function initSynthVolume() {
     const slider = document.getElementById('synthVolumeSlider');
+    const icon = document.getElementById('synthVolumeIcon');
     if (!slider) return;
 
     // Set initial value
@@ -984,6 +1053,12 @@ function initSynthVolume() {
 
     slider.addEventListener('input', (e) => {
         synthVolume = e.target.value / 100;
+
+        // If unmuting via slider, update mute state
+        if (synthMuted && synthVolume > 0) {
+            synthMuted = false;
+            updateSynthVolumeIcon();
+        }
 
         // Update any currently playing notes to the new volume
         activeNotes.forEach((note) => {
@@ -994,6 +1069,34 @@ function initSynthVolume() {
             }
         });
     });
+
+    // Icon click toggles mute
+    if (icon) {
+        icon.addEventListener('click', () => {
+            if (synthMuted) {
+                // Unmute - restore previous volume
+                synthMuted = false;
+                synthVolume = synthVolumeBeforeMute;
+                slider.value = synthVolume * 100;
+            } else {
+                // Mute - save current volume and set to 0
+                synthVolumeBeforeMute = synthVolume;
+                synthMuted = true;
+                synthVolume = 0;
+                slider.value = 0;
+            }
+            updateSynthVolumeIcon();
+
+            // Update playing notes
+            activeNotes.forEach((note) => {
+                if (!note.released && note.gainNode) {
+                    const intervals = chordVoicings[chordMode] || [0];
+                    const targetGain = (0.15 * synthVolume) / Math.sqrt(intervals.length) * intervals.length;
+                    note.gainNode.gain.setTargetAtTime(targetGain, note.gainNode.context.currentTime, 0.05);
+                }
+            });
+        });
+    }
 }
 
 // Initialize smart harmony toggle
