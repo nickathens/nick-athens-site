@@ -74,18 +74,14 @@ function playTuningNote(cell) {
     filter.connect(gainNode);
     gainNode.connect(ctx.destination);
 
-    // Longer duration for held notes
-    const duration = 4;
-
+    // Quick attack, then sustain indefinitely (release handles fade)
     gainNode.gain.value = 0;
     gainNode.gain.setValueAtTime(0, now);
     gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02);
-    // Sustain then decay
-    gainNode.gain.setValueAtTime(0.15, now + duration - 0.5);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    // No decay scheduled - note sustains until released
 
     oscillator.start(now);
-    oscillator.stop(now + duration);
+    // Don't schedule stop - let release handle it
 
     // Note object for modulation
     const note = {
@@ -95,18 +91,14 @@ function playTuningNote(cell) {
         baseFrequency,
         baseDetune: oscillator.detune.value,
         startTime: now,
-        duration,
         startX: null,
-        startY: null
+        startY: null,
+        cell: cell,
+        released: false
     };
 
     // Track this note
     activeNotes.set(cell, note);
-
-    // Clean up when note ends
-    oscillator.onended = () => {
-        activeNotes.delete(cell);
-    };
 
     return note;
 }
@@ -150,17 +142,19 @@ function updatePitchForDrag(note, deltaX) {
     note.oscillator.detune.setTargetAtTime(note.baseDetune + cents, note.oscillator.context.currentTime, 0.02);
 }
 
-// Fade out note when released
+// Fade out note when released - 2.5 second fade
 function releaseNote(note) {
-    if (!note || !note.gainNode) return;
+    if (!note || !note.gainNode || note.released) return;
+    note.released = true;
 
     const ctx = note.gainNode.context;
     const now = ctx.currentTime;
+    const fadeTime = 2.5;
 
-    // Cancel any scheduled gain changes and fade out quickly
+    // Cancel any scheduled gain changes and fade out over 2.5 seconds
     note.gainNode.gain.cancelScheduledValues(now);
     note.gainNode.gain.setValueAtTime(note.gainNode.gain.value, now);
-    note.gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    note.gainNode.gain.exponentialRampToValueAtTime(0.001, now + fadeTime);
 
     // Stop oscillator after fade
     setTimeout(() => {
@@ -169,28 +163,42 @@ function releaseNote(note) {
         } catch (e) {
             // Already stopped
         }
-    }, 350);
+        activeNotes.delete(note.cell);
+    }, fadeTime * 1000 + 50);
+
+    return fadeTime;
 }
 
-// Apply color flash to cell that fades out
-function flashCell(cell, duration) {
+// Apply color to cell - stays on while holding
+function activateCell(cell) {
     const color = cellColors[Math.floor(Math.random() * cellColors.length)];
     const wasOff = cell.classList.contains('off');
 
-    // Clear any existing animation
+    // Store state for release
+    cell.dataset.activeColor = color;
+    cell.dataset.wasOff = wasOff ? 'true' : 'false';
+
+    // Clear any existing animation and set color immediately
     cell.style.transition = 'none';
     cell.style.backgroundColor = color;
     cell.style.opacity = '1';
     if (wasOff) cell.classList.remove('off');
 
-    // Use setTimeout instead of requestAnimationFrame for more reliable timing
-    setTimeout(() => {
-        cell.style.transition = `background-color ${duration}s ease-out, opacity ${duration}s ease-out`;
+    return color;
+}
+
+// Fade cell color when note is released - synced with audio fade
+function fadeCell(cell, fadeTime) {
+    const wasOff = cell.dataset.wasOff === 'true';
+
+    // Start fade transition synced with audio
+    requestAnimationFrame(() => {
+        cell.style.transition = `background-color ${fadeTime}s ease-out, opacity ${fadeTime}s ease-out`;
         cell.style.backgroundColor = 'transparent';
         if (wasOff) {
             cell.style.opacity = '0';
         }
-    }, 10);
+    });
 
     // Reset after animation completes
     setTimeout(() => {
@@ -198,7 +206,9 @@ function flashCell(cell, duration) {
         cell.style.backgroundColor = '';
         cell.style.opacity = '';
         if (wasOff) cell.classList.add('off');
-    }, duration * 1000 + 50);
+        delete cell.dataset.activeColor;
+        delete cell.dataset.wasOff;
+    }, fadeTime * 1000 + 50);
 }
 
 function initHeroGrid() {
@@ -250,13 +260,13 @@ function initHeroGrid() {
                     note.startX = clientX;
                     note.startY = clientY;
                     isHolding = true;
-                    flashCell(cell, note.duration);
+                    activateCell(cell);
                 }
             }
 
             function updateNote(clientX, clientY) {
                 const note = activeNotes.get(cell);
-                if (note && note.startX !== null) {
+                if (note && note.startX !== null && !note.released) {
                     const deltaX = clientX - note.startX;
                     const deltaY = clientY - note.startY;
                     updatePitchForDrag(note, deltaX);
@@ -267,9 +277,9 @@ function initHeroGrid() {
             function endNote() {
                 // Fade out the note when released
                 const note = activeNotes.get(cell);
-                if (note) {
-                    releaseNote(note);
-                    activeNotes.delete(cell);
+                if (note && !note.released) {
+                    const fadeTime = releaseNote(note);
+                    fadeCell(cell, fadeTime);
                 }
                 isHolding = false;
             }
