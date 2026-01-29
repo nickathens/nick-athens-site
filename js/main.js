@@ -169,13 +169,41 @@ function releaseNote(note) {
     return fadeTime;
 }
 
+// Convert hex to HSL
+function hexToHsl(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+
+    if (max === min) {
+        h = s = 0;
+    } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+            case g: h = ((b - r) / d + 2) / 6; break;
+            case b: h = ((r - g) / d + 4) / 6; break;
+        }
+    }
+    return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
 // Apply color to cell - stays on while holding
 function activateCell(cell) {
     const color = cellColors[Math.floor(Math.random() * cellColors.length)];
     const wasOff = cell.classList.contains('off');
 
-    // Store state for release
+    // Store state for release - save both hex and HSL for modulation
+    const hsl = hexToHsl(color);
     cell.dataset.activeColor = color;
+    cell.dataset.baseHue = hsl.h;
+    cell.dataset.baseSat = hsl.s;
+    cell.dataset.baseLight = hsl.l;
     cell.dataset.wasOff = wasOff ? 'true' : 'false';
 
     // Clear any existing animation and set color immediately
@@ -185,6 +213,38 @@ function activateCell(cell) {
     if (wasOff) cell.classList.remove('off');
 
     return color;
+}
+
+// Update cell color based on drag - synced with sound modulation
+function updateCellColor(cell, deltaX, deltaY) {
+    const baseHue = parseFloat(cell.dataset.baseHue);
+    const baseSat = parseFloat(cell.dataset.baseSat);
+    const baseLight = parseFloat(cell.dataset.baseLight);
+
+    if (isNaN(baseHue)) return;
+
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+
+    // Vertical: filter modulation = warmth shift
+    // Down (filter closes) = shift toward red/orange (warmer, -60 hue)
+    // Up (filter opens) = shift toward blue/cyan (brighter, +60 hue)
+    const vertNorm = Math.max(-1, Math.min(1, deltaY / (screenHeight * 0.5)));
+    const hueShift = vertNorm * -60; // Down = warm (negative hue), Up = cool (positive hue)
+
+    // Horizontal: pitch modulation = lightness/saturation
+    // Right (pitch up) = brighter, more saturated
+    // Left (pitch down) = darker, desaturated
+    const horizNorm = Math.max(-1, Math.min(1, deltaX / (screenWidth * 0.5)));
+    const lightShift = horizNorm * 15; // +/- 15% lightness
+    const satShift = horizNorm * 20;   // +/- 20% saturation
+
+    // Calculate new values with clamping
+    const newHue = (baseHue + hueShift + 360) % 360;
+    const newSat = Math.max(20, Math.min(100, baseSat + satShift));
+    const newLight = Math.max(20, Math.min(80, baseLight + lightShift));
+
+    cell.style.backgroundColor = `hsl(${newHue}, ${newSat}%, ${newLight}%)`;
 }
 
 // Fade cell color when note is released - synced with audio fade
@@ -271,6 +331,7 @@ function initHeroGrid() {
                     const deltaY = clientY - note.startY;
                     updatePitchForDrag(note, deltaX);
                     updateFilterForDrag(note, deltaY);
+                    updateCellColor(cell, deltaX, deltaY);
                 }
             }
 
