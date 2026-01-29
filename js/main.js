@@ -27,6 +27,9 @@ const cellColors = [
 let audioContext = null;
 let tuningEnabled = true;
 
+// Active notes for modulation (cell element -> note object)
+const activeNotes = new Map();
+
 // Initialize audio context immediately on first user interaction
 function ensureAudioContext() {
     if (!audioContext) {
@@ -38,43 +41,100 @@ function ensureAudioContext() {
     return audioContext;
 }
 
-// Play a random tuning note with fade (synthesized) - optimized for responsiveness
-function playTuningNote() {
+// Play a tuning note with modulation support
+// Returns note object for modulation control
+function playTuningNote(cell) {
     if (!tuningEnabled) return null;
 
     const ctx = ensureAudioContext();
     const now = ctx.currentTime;
 
     // Pick a random orchestral tuning frequency
-    const frequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
+    const baseFrequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
 
     // Create oscillator for the tone
     const oscillator = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
     const gainNode = ctx.createGain();
 
     // Use sawtooth wave - closer to string instrument timbre
     oscillator.type = 'sawtooth';
-    oscillator.frequency.value = frequency;
+    oscillator.frequency.value = baseFrequency;
 
     // Add slight detune for more organic feel (like strings settling)
     oscillator.detune.value = (Math.random() - 0.5) * 15;
 
-    oscillator.connect(gainNode);
+    // Low-pass filter starts open
+    filter.type = 'lowpass';
+    filter.frequency.value = 8000;
+    filter.Q.value = 1;
+
+    // Chain: oscillator -> filter -> gain -> output
+    oscillator.connect(filter);
+    filter.connect(gainNode);
     gainNode.connect(ctx.destination);
 
-    // Natural envelope: quick attack, sustain, gradual decay
-    const duration = 1.5 + Math.random() * 1; // 1.5-2.5 seconds
+    // Longer duration for held notes
+    const duration = 4;
 
     gainNode.gain.value = 0;
     gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02); // Very quick attack
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration); // Natural decay
+    gainNode.gain.linearRampToValueAtTime(0.15, now + 0.02);
+    // Sustain then decay
+    gainNode.gain.setValueAtTime(0.15, now + duration - 0.5);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
     oscillator.start(now);
     oscillator.stop(now + duration);
 
-    // Return duration for color fade sync
-    return duration;
+    // Note object for modulation
+    const note = {
+        oscillator,
+        filter,
+        gainNode,
+        baseFrequency,
+        baseDetune: oscillator.detune.value,
+        startTime: now,
+        duration,
+        startX: null,
+        startY: null
+    };
+
+    // Track this note
+    activeNotes.set(cell, note);
+
+    // Clean up when note ends
+    oscillator.onended = () => {
+        activeNotes.delete(cell);
+    };
+
+    return note;
+}
+
+// Update filter based on hold time (longer hold = lower cutoff)
+function updateFilterForHold(note, holdTime) {
+    if (!note || !note.filter) return;
+
+    // Map hold time to filter cutoff: 0ms = 8000Hz, 1000ms+ = 200Hz
+    const maxHoldTime = 1000;
+    const progress = Math.min(holdTime / maxHoldTime, 1);
+    // Exponential curve for more musical feel
+    const cutoff = 8000 * Math.pow(200 / 8000, progress);
+
+    note.filter.frequency.setTargetAtTime(cutoff, note.filter.context.currentTime, 0.05);
+}
+
+// Update pitch based on horizontal drag (5ths up/down)
+function updatePitchForDrag(note, deltaX) {
+    if (!note || !note.oscillator) return;
+
+    // 100px drag = one 5th (700 cents)
+    // Clamp to +/- 2 5ths (1400 cents)
+    const centsPerPixel = 7;
+    const maxCents = 1400;
+    const cents = Math.max(-maxCents, Math.min(maxCents, deltaX * centsPerPixel));
+
+    note.oscillator.detune.setTargetAtTime(note.baseDetune + cents, note.oscillator.context.currentTime, 0.02);
 }
 
 // Apply color flash to cell that fades out
@@ -145,22 +205,72 @@ function initHeroGrid() {
                 cell.classList.add('off');
             }
 
-            // Add click handler for tuning note - use mousedown for faster response
-            cell.addEventListener('mousedown', (e) => {
+            // Track interaction state for modulation
+            let holdInterval = null;
+            let holdStartTime = null;
+
+            function startNote(e, clientX, clientY) {
                 e.preventDefault();
-                const duration = playTuningNote();
-                if (duration) {
-                    flashCell(cell, duration);
+                const note = playTuningNote(cell);
+                if (note) {
+                    note.startX = clientX;
+                    note.startY = clientY;
+                    holdStartTime = Date.now();
+                    flashCell(cell, note.duration);
+
+                    // Update filter based on hold time
+                    holdInterval = setInterval(() => {
+                        const holdTime = Date.now() - holdStartTime;
+                        updateFilterForHold(note, holdTime);
+                    }, 16); // ~60fps
+                }
+            }
+
+            function updateNote(clientX) {
+                const note = activeNotes.get(cell);
+                if (note && note.startX !== null) {
+                    const deltaX = clientX - note.startX;
+                    updatePitchForDrag(note, deltaX);
+                }
+            }
+
+            function endNote() {
+                if (holdInterval) {
+                    clearInterval(holdInterval);
+                    holdInterval = null;
+                }
+                holdStartTime = null;
+            }
+
+            // Mouse events
+            cell.addEventListener('mousedown', (e) => {
+                startNote(e, e.clientX, e.clientY);
+            });
+
+            cell.addEventListener('mousemove', (e) => {
+                if (holdStartTime !== null) {
+                    updateNote(e.clientX);
                 }
             });
-            // Also handle touch for mobile
+
+            cell.addEventListener('mouseup', endNote);
+            cell.addEventListener('mouseleave', endNote);
+
+            // Touch events
             cell.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const duration = playTuningNote();
-                if (duration) {
-                    flashCell(cell, duration);
+                const touch = e.touches[0];
+                startNote(e, touch.clientX, touch.clientY);
+            }, { passive: false });
+
+            cell.addEventListener('touchmove', (e) => {
+                if (holdStartTime !== null) {
+                    const touch = e.touches[0];
+                    updateNote(touch.clientX);
                 }
             }, { passive: false });
+
+            cell.addEventListener('touchend', endNote);
+            cell.addEventListener('touchcancel', endNote);
         }
         grid.appendChild(cell);
     }
