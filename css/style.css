@@ -589,8 +589,8 @@ body {
 
 /* Contact Section */
 .contact-content {
-    text-align: center;
-    padding: 4rem 0;
+    text-align: left;
+    padding: 2rem 0;
 }
 
 .contact-content p {
@@ -600,10 +600,11 @@ body {
 }
 
 .contact-email {
-    font-size: 1rem;
+    font-size: 0.875rem;
     color: var(--white);
     text-decoration: none;
     font-weight: 400;
+    opacity: 0.6;
     transition: opacity var(--transition);
 }
 
