@@ -600,7 +600,7 @@ body {
 }
 
 .contact-email {
-    font-size: 1.5rem;
+    font-size: 1rem;
     color: var(--white);
     text-decoration: none;
     font-weight: 400;
