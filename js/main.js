@@ -173,22 +173,13 @@ function pickIntervals(size) {
 
 // Main harmony function - returns intervals in cents
 // Fred again.. style: modal ambiguity, minor 6ths, gritty tension
+// Note: The "analog warmth" and octave tricks are kept subtle to avoid harsh dissonance
 function getSmartIntervals(baseFreq) {
     const size = getVoicingSize();
     const intervals = pickIntervals(size);
 
-    // Fred's register tricks - create width and space
-    const roll = Math.random();
-
-    if (roll < 0.12 && intervals.length > 1) {
-        // Drop root down an octave for massive width (stayinit style)
-        intervals[0] = -1200;
-    } else if (roll < 0.20 && intervals.length > 1) {
-        // Sometimes add subtle detuning for that analog/tape feel
-        // Shift a random interval by small amount (10-30 cents)
-        const idx = 1 + Math.floor(Math.random() * (intervals.length - 1));
-        intervals[idx] += (Math.random() - 0.5) * 40;
-    }
+    // Keep chords clean - no register tricks or detuning in chord mode
+    // The character comes from the interval choices, not from destabilizing the voicing
 
     return intervals;
 }
@@ -248,9 +239,9 @@ function playTuningNote(cell) {
         const ratio = Math.pow(2, cents / 1200);
         oscillator.frequency.value = baseFrequency * ratio;
 
-        // Add slight detune for more organic feel (like strings settling)
-        // Each voice gets slightly different detune for richness
-        oscillator.detune.value = (Math.random() - 0.5) * 15 + (index * 2);
+        // Minimal detune for slight warmth - keep it subtle to avoid dissonance
+        // Only ±3 cents variation (barely perceptible but adds life)
+        oscillator.detune.value = (Math.random() - 0.5) * 6;
 
         // Low-pass filter starts partially closed for modulation range
         filter.type = 'lowpass';
