@@ -52,16 +52,39 @@ let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
 
-// Smart Harmony System
-// Based on pentatonic scale (impossible to sound bad) with true probabilistic voicing
-// Research-backed: Eno's generative principles, modal jazz, spectral music
+// Smart Harmony System - Fred again.. Style
+// Based on interval analysis of solo, scared, hardstyle2, stayinit
+// Key characteristics:
+// - Heavy minor 6ths (melancholic, bittersweet feel)
+// - Perfect 5ths for power/stability
+// - Minor 2nds for tension/grit
+// - Modal/ambiguous quality - not clean major or minor
+// - Avoids traditional harmony clarity
 
-// Pentatonic scale intervals (semitones from root) - no dissonance possible
-// These are the "safe" intervals that always sound good together
-const PENTATONIC_INTERVALS = [0, 2, 4, 7, 9]; // Major pentatonic: C D E G A
+// Fred again.. interval weights (in cents, 100 cents = 1 semitone)
+// Weighted by frequency of appearance in his tracks
+const FRED_INTERVALS = {
+    // Core intervals (most common)
+    perfectFifth: 700,      // P5 - foundation, stability (12.2% in stayinit)
+    minorSixth: 800,        // m6 - his signature melancholic sound (11.4% average)
+    perfectFourth: 500,     // P4 - power chord feel (10.7% in hardstyle2)
 
-// Consonant voicing intervals in cents (100 cents = 1 semitone)
-// Ordered by consonance (simpler frequency ratios = more consonant)
+    // Tension intervals (grit, emotion)
+    minorSecond: 100,       // m2 - tension, dissonance (12.5% in solo)
+    minorSeventh: 1000,     // m7 - modal darkness
+    majorSeventh: 1100,     // M7 - jazz/R&B influence (11.2% in scared)
+
+    // Color intervals
+    majorThird: 400,        // M3 - brightness (11.4% in scared)
+    minorThird: 300,        // m3 - minor key character
+    majorSixth: 900,        // M6 - bittersweet (10.1% in scared)
+
+    // Octave displacement
+    octave: 1200,
+    octaveDown: -1200
+};
+
+// Legacy consonant intervals (for fallback/comparison)
 const CONSONANT_INTERVALS = {
     unison: 0,
     octave: 1200,
@@ -112,7 +135,8 @@ function getVoicingSize() {
     }
 }
 
-// Pick consonant intervals for a chord voicing
+// Pick Fred again.. style intervals for a chord voicing
+// Emphasizes minor 6ths, perfect 5ths, and modal ambiguity
 function pickIntervals(size) {
     if (size === 1) return [0];
 
@@ -120,35 +144,41 @@ function pickIntervals(size) {
     const roll = Math.random();
 
     if (size >= 2) {
-        // Pick second note - favor fifths and octaves heavily
-        if (roll < 0.35) {
-            intervals.push(CONSONANT_INTERVALS.fifth);           // Perfect 5th (most common)
-        } else if (roll < 0.55) {
-            intervals.push(CONSONANT_INTERVALS.octave);          // Octave
-        } else if (roll < 0.70) {
-            intervals.push(CONSONANT_INTERVALS.fourth);          // Perfect 4th
-        } else if (roll < 0.80) {
-            intervals.push(-CONSONANT_INTERVALS.fifth);          // 5th below (inverted)
+        // Fred's second note choices - weighted by his actual usage
+        if (roll < 0.22) {
+            intervals.push(FRED_INTERVALS.perfectFifth);         // P5 - power, stability
+        } else if (roll < 0.40) {
+            intervals.push(FRED_INTERVALS.minorSixth);           // m6 - his signature sound
+        } else if (roll < 0.52) {
+            intervals.push(FRED_INTERVALS.perfectFourth);        // P4 - hardstyle power
+        } else if (roll < 0.62) {
+            intervals.push(FRED_INTERVALS.minorSecond);          // m2 - gritty tension
+        } else if (roll < 0.72) {
+            intervals.push(FRED_INTERVALS.majorSeventh);         // M7 - scared-style emotion
+        } else if (roll < 0.82) {
+            intervals.push(FRED_INTERVALS.majorThird);           // M3 - brightness
         } else if (roll < 0.90) {
-            intervals.push(CONSONANT_INTERVALS.majorThird);      // Major 3rd
+            intervals.push(-FRED_INTERVALS.perfectFifth);        // 5th below
         } else {
-            intervals.push(CONSONANT_INTERVALS.minorThird);      // Minor 3rd
+            intervals.push(FRED_INTERVALS.minorSeventh);         // m7 - modal darkness
         }
     }
 
     if (size >= 3) {
-        // Pick third note - add octave displacement or another consonance
+        // Third note - octave displacements and stacked intervals
         const roll2 = Math.random();
-        if (roll2 < 0.30) {
-            intervals.push(CONSONANT_INTERVALS.octave);          // Add octave
-        } else if (roll2 < 0.50) {
-            intervals.push(-CONSONANT_INTERVALS.octave);         // Octave below
-        } else if (roll2 < 0.70) {
-            intervals.push(CONSONANT_INTERVALS.fifth + CONSONANT_INTERVALS.octave); // 5th + octave
-        } else if (roll2 < 0.85) {
-            intervals.push(CONSONANT_INTERVALS.fourth);          // Add 4th if not there
+        if (roll2 < 0.25) {
+            intervals.push(FRED_INTERVALS.octave);               // Octave up
+        } else if (roll2 < 0.45) {
+            intervals.push(FRED_INTERVALS.octaveDown);           // Octave down (width)
+        } else if (roll2 < 0.60) {
+            intervals.push(FRED_INTERVALS.minorSixth + FRED_INTERVALS.octaveDown); // Low m6
+        } else if (roll2 < 0.75) {
+            intervals.push(FRED_INTERVALS.perfectFifth + FRED_INTERVALS.octave);   // High 5th
+        } else if (roll2 < 0.88) {
+            intervals.push(FRED_INTERVALS.majorSixth);           // M6 - bittersweet color
         } else {
-            intervals.push(CONSONANT_INTERVALS.fifth * 2);       // Stacked 5th (9th)
+            intervals.push(FRED_INTERVALS.minorThird);           // m3 - minor character
         }
     }
 
@@ -156,15 +186,22 @@ function pickIntervals(size) {
 }
 
 // Main harmony function - returns intervals in cents
+// Fred again.. style: modal ambiguity, minor 6ths, gritty tension
 function getSmartIntervals(baseFreq) {
     const size = getVoicingSize();
     const intervals = pickIntervals(size);
 
-    // Add subtle random variation to keep it interesting
-    // Sometimes shift intervals up/down an octave for register variety
-    if (Math.random() < 0.15 && intervals.length > 1) {
-        // Occasionally drop root down an octave for width
+    // Fred's register tricks - create width and space
+    const roll = Math.random();
+
+    if (roll < 0.12 && intervals.length > 1) {
+        // Drop root down an octave for massive width (stayinit style)
         intervals[0] = -1200;
+    } else if (roll < 0.20 && intervals.length > 1) {
+        // Sometimes add subtle detuning for that analog/tape feel
+        // Shift a random interval by small amount (10-30 cents)
+        const idx = 1 + Math.floor(Math.random() * (intervals.length - 1));
+        intervals[idx] += (Math.random() - 0.5) * 40;
     }
 
     return intervals;
