@@ -52,6 +52,13 @@ let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
 
+// Root lock system - keeps the same root for multiple chord triggers
+// This prevents jarring root motion when playing chords rapidly
+let lockedRootFrequency = null;
+let rootLockCounter = 0;
+const ROOT_LOCK_DURATION = 4; // Number of chord triggers before root can change
+let rootLockTimeout = null; // Timer to reset root lock on silence
+
 // Smart Harmony System - Fred again.. Style
 // Based on interval analysis of solo, scared, hardstyle2, stayinit
 // Key characteristics:
@@ -202,6 +209,41 @@ function ensureAudioContext() {
     return audioContext;
 }
 
+// Get the base frequency for a chord - handles root locking
+function getChordRootFrequency(isChordMode) {
+    // In solo mode (Smart Harmony off), always pick fresh random note
+    if (!isChordMode) {
+        return tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
+    }
+
+    // In chord mode with root lock active - use the locked root
+    if (lockedRootFrequency !== null && rootLockCounter < ROOT_LOCK_DURATION) {
+        rootLockCounter++;
+        return lockedRootFrequency;
+    }
+
+    // Time to pick a new root (either first chord or lock expired)
+    const newRoot = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
+    lockedRootFrequency = newRoot;
+    rootLockCounter = 1;
+
+    return newRoot;
+}
+
+// Reset root lock after period of silence
+function scheduleRootLockReset() {
+    // Clear any existing timeout
+    if (rootLockTimeout) {
+        clearTimeout(rootLockTimeout);
+    }
+
+    // Reset root lock after 1.5 seconds of no new notes
+    rootLockTimeout = setTimeout(() => {
+        lockedRootFrequency = null;
+        rootLockCounter = 0;
+    }, 1500);
+}
+
 // Play a tuning note with modulation support (supports smart harmony)
 // Returns note object for modulation control
 function playTuningNote(cell) {
@@ -210,11 +252,19 @@ function playTuningNote(cell) {
     const ctx = ensureAudioContext();
     const now = ctx.currentTime;
 
-    // Pick a random orchestral tuning frequency
-    const baseFrequency = tuningFrequencies[Math.floor(Math.random() * tuningFrequencies.length)];
+    // Get chord voicing to determine if we're in chord mode
+    const intervals = smartHarmony ? getSmartIntervals(0) : [0];
+    const isChordMode = smartHarmony && intervals.length > 1;
 
-    // Get chord voicing intervals - smart or single note
-    const intervals = smartHarmony ? getSmartIntervals(baseFrequency) : [0];
+    // Pick frequency - uses root lock in chord mode
+    const baseFrequency = getChordRootFrequency(isChordMode);
+
+    // Schedule root lock reset (will be cancelled if another note comes in)
+    scheduleRootLockReset();
+
+    // Re-get intervals with actual base frequency (for any frequency-dependent logic)
+    // Note: intervals were already calculated above for isChordMode check
+    // This ensures consistency
 
     // Arrays to hold all oscillators/filters for the chord
     const oscillators = [];
