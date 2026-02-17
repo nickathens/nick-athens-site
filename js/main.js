@@ -1,7 +1,7 @@
 // Hero Grid Animation
 
-// Full chromatic scale frequencies across octaves (C2 to C6)
-// More notes = more variation when Smart Harmony is on
+// Pentatonic scale frequencies across octaves (C, D, E, G, A)
+// Pentatonic guarantees harmonic consonance - any combination sounds good
 const tuningFrequencies = [
     // C notes
     65.41,   // C2
@@ -18,11 +18,6 @@ const tuningFrequencies = [
     164.81,  // E3
     329.63,  // E4
     659.25,  // E5
-    // F notes
-    87.31,   // F2
-    174.61,  // F3
-    349.23,  // F4
-    698.46,  // F5
     // G notes
     98.00,   // G2
     196.00,  // G3
@@ -32,12 +27,7 @@ const tuningFrequencies = [
     110.00,  // A2
     220.00,  // A3
     440.00,  // A4 (concert pitch)
-    880.00,  // A5
-    // B notes
-    123.47,  // B2
-    246.94,  // B3
-    493.88,  // B4
-    987.77   // B5
+    880.00   // A5
 ];
 
 // Color palette for grid cells
@@ -158,18 +148,18 @@ function pickIntervals(size) {
     }
 
     if (size >= 3) {
-        // Add ONE color note from Fred's palette - the character
+        // Add ONE consonant color note - warm and harmonic
         const colorRoll = Math.random();
-        if (colorRoll < 0.35) {
-            intervals.push(FRED_INTERVALS.octave);               // Octave up - safe, full
-        } else if (colorRoll < 0.55) {
-            intervals.push(FRED_INTERVALS.minorSixth);           // m6 - Fred's signature melancholy
-        } else if (colorRoll < 0.70) {
-            intervals.push(FRED_INTERVALS.majorSeventh);         // M7 - shimmer, emotion
-        } else if (colorRoll < 0.82) {
+        if (colorRoll < 0.25) {
+            intervals.push(FRED_INTERVALS.octave);               // Octave up - full, resonant
+        } else if (colorRoll < 0.45) {
+            intervals.push(FRED_INTERVALS.majorThird);           // M3 - bright, warm
+        } else if (colorRoll < 0.60) {
+            intervals.push(FRED_INTERVALS.minorThird);           // m3 - gentle, minor color
+        } else if (colorRoll < 0.75) {
             intervals.push(FRED_INTERVALS.octaveDown);           // Octave down - width, power
-        } else if (colorRoll < 0.92) {
-            intervals.push(FRED_INTERVALS.majorSixth);           // M6 - bittersweet
+        } else if (colorRoll < 0.88) {
+            intervals.push(FRED_INTERVALS.majorSixth);           // M6 - sweet, open
         } else {
             intervals.push(FRED_INTERVALS.perfectFourth);        // P4 - suspended feel
         }
