@@ -189,12 +189,30 @@ const notesByPointer = new Map();
 const activeNotes = new Map();
 
 // Initialize audio context immediately on first user interaction
+// Mobile browsers (especially iOS Safari) require resume() to complete
+// before any audio will be produced. We handle this by:
+// 1. Creating a silent buffer and playing it on first interaction (iOS unlock)
+// 2. Awaiting resume() before returning when possible
+// 3. Retrying resume on every interaction until state is 'running'
+let audioContextUnlocked = false;
+
 function ensureAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (audioContext.state === 'suspended') {
         audioContext.resume();
+    }
+    // iOS Safari unlock: play a silent buffer to fully unlock audio output
+    if (!audioContextUnlocked && audioContext.state === 'running') {
+        audioContextUnlocked = true;
+        try {
+            const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
+            const source = audioContext.createBufferSource();
+            source.buffer = silentBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+        } catch (e) {}
     }
     return audioContext;
 }
@@ -240,6 +258,15 @@ function playTuningNote(cell) {
     if (!tuningEnabled) return null;
 
     const ctx = ensureAudioContext();
+
+    // If the context is still suspended (common on first mobile interaction),
+    // force another resume attempt. The note will start playing once the
+    // context actually resumes — oscillators queued on a suspended context
+    // begin producing audio as soon as it transitions to 'running'.
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
+
     const now = ctx.currentTime;
 
     // Get chord voicing to determine if we're in chord mode
@@ -1282,6 +1309,11 @@ function initGlobalSynthEvents() {
 
         e.preventDefault();
 
+        // Resume audio context inside the user gesture (critical for iOS Safari)
+        if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+
         // If this pointer is already tracking something, release it first
         if (notesByPointer.has(e.pointerId)) {
             releasePointer(e.pointerId);
@@ -1378,13 +1410,31 @@ document.addEventListener('DOMContentLoaded', () => {
     initGlobalSynthEvents();
 
     // Prime audio context on first interaction for instant response later
+    // Listen on touchstart, pointerdown, mousedown, and click to catch every
+    // possible first-interaction scenario across browsers and devices.
+    // Mobile Safari in particular needs the context created AND resumed inside
+    // a user gesture handler, and may need a silent buffer played to unlock.
     const primeAudio = () => {
-        ensureAudioContext();
+        const ctx = ensureAudioContext();
+        // If still suspended after ensureAudioContext, set up a listener
+        // for the state change so we can unlock as soon as it resumes
+        if (ctx.state !== 'running') {
+            ctx.addEventListener('statechange', function onStateChange() {
+                if (ctx.state === 'running') {
+                    ctx.removeEventListener('statechange', onStateChange);
+                    ensureAudioContext(); // triggers the silent buffer unlock
+                }
+            });
+        }
         document.removeEventListener('mousedown', primeAudio);
         document.removeEventListener('touchstart', primeAudio);
+        document.removeEventListener('pointerdown', primeAudio);
+        document.removeEventListener('click', primeAudio);
     };
-    document.addEventListener('mousedown', primeAudio, { once: true });
-    document.addEventListener('touchstart', primeAudio, { once: true });
+    document.addEventListener('mousedown', primeAudio);
+    document.addEventListener('touchstart', primeAudio);
+    document.addEventListener('pointerdown', primeAudio);
+    document.addEventListener('click', primeAudio);
 });
 
 // Logo click patterns - multiple beautiful symmetrical patterns
