@@ -612,9 +612,13 @@ function initHeroGrid() {
 
             // Click logo to trigger wave pattern
             cell.style.cursor = 'pointer';
-            cell.addEventListener('click', (e) => {
+            cell.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                const ctx = ensureAudioContext();
+                if (ctx.state === 'suspended') {
+                    try { await ctx.resume(); } catch (err) {}
+                }
                 playWavePattern();
             });
         } else {
@@ -1300,7 +1304,7 @@ function onSynthDiscovered() {
 // Global pointer event handlers for synth - attached to document for reliability
 function initGlobalSynthEvents() {
     // POINTERDOWN - start a note
-    document.addEventListener('pointerdown', (e) => {
+    document.addEventListener('pointerdown', async (e) => {
         // Only left mouse button or touch
         if (e.button !== 0) return;
 
@@ -1309,9 +1313,12 @@ function initGlobalSynthEvents() {
 
         e.preventDefault();
 
-        // Resume audio context inside the user gesture (critical for iOS Safari)
-        if (audioContext && audioContext.state === 'suspended') {
-            audioContext.resume();
+        // Ensure audio context exists and is running before playing
+        // On mobile, the first gesture must create + resume the context
+        // and we must await it so oscillators don't fire on a suspended context
+        const ctx = ensureAudioContext();
+        if (ctx.state === 'suspended') {
+            try { await ctx.resume(); } catch (err) {}
         }
 
         // If this pointer is already tracking something, release it first
