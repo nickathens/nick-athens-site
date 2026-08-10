@@ -74,6 +74,12 @@
                 <span class="harmony-toggle-slider"></span>
                 <span class="harmony-toggle-label">Harmony</span>
             </label>
+            <div class="wave-select" id="waveSelect" role="radiogroup" aria-label="Waveform">
+                <button type="button" class="wave-option" data-wave="sine" role="radio" aria-checked="false" title="Sine - pure, no overtones">Sin</button>
+                <button type="button" class="wave-option" data-wave="triangle" role="radio" aria-checked="false" title="Triangle - soft and hollow">Tri</button>
+                <button type="button" class="wave-option" data-wave="square" role="radio" aria-checked="false" title="Square - hollow and reedy">Sqr</button>
+                <button type="button" class="wave-option" data-wave="sawtooth" role="radio" aria-checked="false" title="Saw - bright, stringlike">Saw</button>
+            </div>
         </div>
         <div class="nav-links">
             <a href="#film">Film</a>
@@ -303,6 +309,17 @@
                 <div class="synth-manual-item">
                     <span class="synth-manual-gesture">Drag Left/Right</span>
                     <span class="synth-manual-effect">Pitch bend (5ths up/down)</span>
+                </div>
+            </div>
+            <h4>Waveform</h4>
+            <div class="synth-manual-chords">
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Sin / Tri</span>
+                    <span class="synth-manual-effect">Pure and soft, few overtones for the filter to work on</span>
+                </div>
+                <div class="synth-manual-item">
+                    <span class="synth-manual-chord">Sqr / Saw (default)</span>
+                    <span class="synth-manual-effect">Rich and bright, the drag gestures bite hardest here</span>
                 </div>
             </div>
             <h4>Smart Harmony</h4>

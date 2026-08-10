@@ -59,58 +59,22 @@ function basePlayLift() {
     return Number.isNaN(v) ? 1.35 : v;
 }
 
-// Preview knobs, inert unless the query string asks for them.
-//   ?sky=3|4|5|6  how far the photo's own regional colour is amplified
-//   ?dim=0..1     grid opacity over the black page
-//   ?off=0..1     how far a resting cell dims (0 is the old black hole)
-//   ?lift=1..2    how much a held cell brightens
-//   ?tint=0..1    how far a held cell takes the colour, 1 is the full hue
-// These exist so the look can be judged on a real device. Drop them, and the
-// spare hero-sky-k*.webp files, once the setting is chosen.
-(function applyHeroPreviewParams() {
-    const params = new URLSearchParams(window.location.search);
-
-    const off = parseFloat(params.get('off'));
-    if (!Number.isNaN(off) && off >= 0 && off <= 1) {
-        document.documentElement.style.setProperty('--hero-off', off);
-    }
-
-    const lift = parseFloat(params.get('lift'));
-    if (!Number.isNaN(lift) && lift >= 1 && lift <= 2) {
-        document.documentElement.style.setProperty('--hero-play-lift', lift);
-    }
-
-    const tint = parseFloat(params.get('tint'));
-    if (!Number.isNaN(tint) && tint >= 0 && tint <= 1) {
-        document.documentElement.style.setProperty('--hero-tint', tint);
-    }
-
-    const sky = params.get('sky');
-    if (sky && /^[3-6]$/.test(sky)) {
-        HERO_PHOTO.src = sky === '5' ? 'images/hero-sky.webp' : `images/hero-sky-k${sky}.webp`;
-    }
-
-    const dim = parseFloat(params.get('dim'));
-    if (!Number.isNaN(dim) && dim >= 0 && dim <= 1) {
-        document.documentElement.style.setProperty('--hero-opacity', dim);
-    }
-
-    const on = parseFloat(params.get('on'));
-    if (!Number.isNaN(on) && on >= 0 && on <= 1) {
-        HERO_LIT.ratio = on;
-    }
-
-    const fx = parseFloat(params.get('fx'));
-    if (!Number.isNaN(fx) && fx >= 0 && fx <= 1) {
-        HERO_PHOTO.focusX = fx;
-    }
-})();
+// The hero settings above were chosen on a real device through a set of
+// temporary ?off / ?tint / ?lift / ?sky / ?dim / ?on / ?fx query knobs. Those
+// are gone now that the look is picked: ?off=0 in particular would put back the
+// opaque black cell the photo hero exists to avoid. tools/verify_hero.py drives
+// the same CSS variables directly, so the checks they carried are still run.
 
 // Audio context for synthesized notes - initialize once and keep alive
 let audioContext = null;
 let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
+
+// Oscillator shape, picked in the nav. Saw is the default: it is the richest of
+// the four, so the low-pass filter and the drag gestures have most to work on.
+const SYNTH_WAVEFORMS = ['sine', 'triangle', 'square', 'sawtooth'];
+let synthWaveform = 'sawtooth';
 
 // Root lock system - keeps the same root for multiple chord triggers
 // This prevents jarring root motion when playing chords rapidly
@@ -369,8 +333,8 @@ function playTuningNote(cell) {
         const oscillator = ctx.createOscillator();
         const filter = ctx.createBiquadFilter();
 
-        // Use sawtooth wave - closer to string instrument timbre
-        oscillator.type = 'sawtooth';
+        // Shape chosen in the nav, sawtooth unless the visitor changed it
+        oscillator.type = synthWaveform;
 
         // Calculate frequency from cents (100 cents = 1 semitone)
         const ratio = Math.pow(2, cents / 1200);
@@ -1345,6 +1309,39 @@ function initSynthVolume() {
     }
 }
 
+// Initialize the waveform select
+//
+// The shape lands on the next note, not on one already sounding. That is not a
+// shortcut: any click outside the grid runs stopAllNotes() as stuck-note safety
+// (see initGlobalSynthEvents), so a held note is already gone by the time this
+// handler runs. A live retune here would be code that can never execute.
+function initWaveformSelect() {
+    const group = document.getElementById('waveSelect');
+    if (!group) return;
+
+    const options = [...group.querySelectorAll('.wave-option')];
+
+    // Paint from the variable rather than from the markup, so there is one
+    // source of truth for which shape is armed.
+    function paint() {
+        options.forEach(button => {
+            const on = button.dataset.wave === synthWaveform;
+            button.classList.toggle('is-active', on);
+            button.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+    }
+
+    options.forEach(button => {
+        button.addEventListener('click', () => {
+            if (!SYNTH_WAVEFORMS.includes(button.dataset.wave)) return;
+            synthWaveform = button.dataset.wave;
+            paint();
+        });
+    });
+
+    paint();
+}
+
 // Initialize smart harmony toggle
 function initSmartHarmony() {
     const toggle = document.getElementById('harmonyToggle');
@@ -1533,6 +1530,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initAudioPlayer();
     initSynthVolume();
     initSmartHarmony();
+    initWaveformSelect();
     initSynthManual();
     initGlobalSynthEvents();
 

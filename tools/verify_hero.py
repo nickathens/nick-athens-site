@@ -72,15 +72,68 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 
-def open_page(b, query="", w=1600, h=900):
+def open_page(b, css_vars=None, w=1600, h=900):
     p = b.new_page(viewport={"width": w, "height": h})
     # Arrive as a returning visitor: the first note otherwise pops the synth
     # manual 800ms later, and every reading taken through its overlay is dark.
     p.add_init_script("localStorage.setItem('synthDiscovered', 'true');")
-    p.goto(URL + query, wait_until="networkidle")
+    # Record the shape of every oscillator at the moment it starts. This is the
+    # only reading that can tell the nav's waveform select apart from a
+    # hardcoded oscillator.type, so it is installed before any script runs.
+    p.add_init_script(
+        """
+        window.__waves = [];
+        const start = OscillatorNode.prototype.start;
+        OscillatorNode.prototype.start = function (...a) {
+            window.__waves.push(this.type);
+            return start.apply(this, a);
+        };
+    """
+    )
+    p.goto(URL, wait_until="networkidle")
     p.wait_for_timeout(1400)
     p.evaluate("() => { for (let i = 1; i < 99999; i++) clearInterval(i); }")
+    # The hero's look was chosen through temporary query knobs which have since
+    # been removed from the shipped page. The variables they wrote are still the
+    # real mechanism, so they are driven here directly.
+    if css_vars:
+        p.evaluate(
+            """(vars) => {
+            for (const [k, v] of Object.entries(vars)) {
+                document.documentElement.style.setProperty(k, v);
+            }
+        }""",
+            css_vars,
+        )
+        p.wait_for_timeout(700)
     return p
+
+
+def press_cell(p, box, hold=450):
+    """Press and release one cell, returning the waveforms that sounded."""
+    p.evaluate("() => { window.__waves = []; }")
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    p.mouse.move(cx, cy)
+    p.mouse.down()
+    p.wait_for_timeout(hold)
+    p.mouse.up()
+    return p.evaluate("() => window.__waves")
+
+
+def wave_state(p):
+    return p.evaluate(
+        """() => {
+        const o = [...document.querySelectorAll('#waveSelect .wave-option')];
+        return {
+            order: o.map(x => x.dataset.wave),
+            active: o.filter(x => x.classList.contains('is-active')).map(x => x.dataset.wave),
+            checked: o.filter(x => x.getAttribute('aria-checked') === 'true').map(x => x.dataset.wave),
+            // A top level `let` is a script scope binding, not a window
+            // property, so it is read by bare name rather than off window.
+            armed: typeof synthWaveform === 'undefined' ? null : synthWaveform,
+        };
+    }"""
+    )
 
 
 def settle(p, idx=PROBE_CELL, off=False):
@@ -238,16 +291,16 @@ with sync_playwright() as pw:
           abs(after["luma"] - clean["luma"]) < 1.5, f"{after['luma']} vs first press {clean['luma']}")
     p.close()
 
-    # The knobs move what they name. Both tint readings pin the same colour on
-    # the same cell, so the only difference between them is the knob.
-    p = open_page(b, "?off=0.15")
+    # The two variables move what they name. Both tint readings pin the same
+    # colour on the same cell, so the only difference between them is the value.
+    p = open_page(b, {"--hero-off": "0.15"})
     box = settle(p, off=True)
     dark = shot(p, box)
     p.close()
-    check("?off knob darkens the resting cell", dark["luma"] < rest["luma"] * 0.6,
+    check("the resting dim is a live variable, not baked in", dark["luma"] < rest["luma"] * 0.6,
           f"{dark['luma']} vs default {rest['luma']}")
 
-    p = open_page(b, "?tint=0.2")
+    p = open_page(b, {"--hero-tint": "0.2"})
     box = settle(p)
     base = shot(p, box)
     cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
@@ -263,15 +316,99 @@ with sync_playwright() as pw:
     # cell. Hue swings hard even at a weak tint because the photo's own hue is
     # unstable where it is nearly grey, which makes it a poor proxy.
     soft_shift = hue_gap(soft["hue"], base["hue"])
-    check("?tint knob softens the colour", soft["sat"] < held["sat"] * 0.7,
+    check("a weaker tint softens the colour", soft["sat"] < held["sat"] * 0.7,
           f"sat {soft['sat']} vs full {held['sat']}")
-    check("?tint at 0.2 still colours the cell", soft_shift > 5 and soft["sat"] > base["sat"],
+    check("tint at 0.2 still colours the cell", soft_shift > 5 and soft["sat"] > base["sat"],
           f"hue shift {round(soft_shift, 1)}, sat {base['sat']} -> {soft['sat']}")
-    check("?tint at 0.2 keeps the photo", soft["spread"] > 2.0, f"spread {soft['spread']}")
+    check("tint at 0.2 keeps the photo", soft["spread"] > 2.0, f"spread {soft['spread']}")
+
+    # The waveform select arms a shape, and the shape reaches the oscillator.
+    # Reading the button state alone would pass with a hardcoded oscillator
+    # type, so every case is confirmed by what actually sounded.
+    p = open_page(b)
+    box = settle(p)
+    start = wave_state(p)
+    check("the four shapes are offered in order",
+          start["order"] == ["sine", "triangle", "square", "sawtooth"], f"{start['order']}")
+    check("saw is armed on arrival, and only saw",
+          start["active"] == ["sawtooth"] and start["checked"] == ["sawtooth"]
+          and start["armed"] == "sawtooth",
+          f"active {start['active']}, aria {start['checked']}, armed {start['armed']}")
+    # The armed button has to look armed. Reading the class alone would pass
+    # with the .is-active rule deleted, leaving a selector with no selection.
+    paint = p.evaluate(
+        """() => {
+        const o = [...document.querySelectorAll('#waveSelect .wave-option')];
+        const on = o.find(x => x.classList.contains('is-active'));
+        const off = o.find(x => !x.classList.contains('is-active'));
+        const read = e => {
+            const s = getComputedStyle(e);
+            return [s.backgroundColor, s.color, s.opacity].join(' | ');
+        };
+        return { on: read(on), off: read(off) };
+    }"""
+    )
+    check("the armed button is drawn differently from the rest", paint["on"] != paint["off"],
+          f"armed {paint['on']}, others {paint['off']}")
+    default_waves = press_cell(p, box)
+    check("an untouched page still plays saw",
+          bool(default_waves) and set(default_waves) == {"sawtooth"}, f"{default_waves}")
+    p.wait_for_timeout(2600)
+
+    for wave, label in (("sine", "Sin"), ("triangle", "Tri"), ("square", "Sqr"), ("sawtooth", "Saw")):
+        p.click(f'#waveSelect .wave-option[data-wave="{wave}"]')
+        s = wave_state(p)
+        check(f"{label} lights up alone when picked",
+              s["active"] == [wave] and s["checked"] == [wave] and s["armed"] == wave,
+              f"active {s['active']}, aria {s['checked']}, armed {s['armed']}")
+        sounded = press_cell(p, box)
+        check(f"{label} is the shape that sounds",
+              bool(sounded) and set(sounded) == {wave}, f"{sounded}")
+        p.wait_for_timeout(2600)
+    p.close()
+
+    # The cluster sits top left beside Harmony and clears the mobile menu
+    # button. 320 is in the list because that is the width where the untightened
+    # bar ended exactly on the button, with a gap of 0.0.
+    for w, h, label in ((1600, 900, "desktop"), (430, 932, "phone"), (320, 800, "narrow")):
+        p = open_page(b, None, w, h)
+        geo = p.evaluate(
+            """() => {
+            const r = e => e ? e.getBoundingClientRect() : null;
+            const wave = r(document.getElementById('waveSelect'));
+            const harm = r(document.querySelector('.harmony-toggle'));
+            const bar = r(document.querySelector('.synth-controls'));
+            // Hidden on desktop, where a zero sized rect would read as x = 0
+            // and make the clearance check fail for the wrong reason.
+            let burger = r(document.querySelector('.nav-toggle'));
+            if (burger && burger.width === 0) burger = null;
+            const visible = getComputedStyle(document.getElementById('waveSelect')).display !== 'none';
+            return { wave, harm, bar, burger, visible,
+                     vw: innerWidth, scrollW: document.documentElement.scrollWidth };
+        }"""
+        )
+        w_box, h_box, bar, burger = geo["wave"], geo["harm"], geo["bar"], geo["burger"]
+        check(f"{label}: all four buttons are on screen",
+              geo["visible"] and w_box["width"] > 40, f"width {round(w_box['width'], 1)}")
+        check(f"{label}: it sits immediately after Harmony",
+              -1 <= w_box["x"] - h_box["right"] <= 14,
+              f"harmony ends {round(h_box['right'], 1)}, select starts {round(w_box['x'], 1)}")
+        check(f"{label}: the cluster is top left", bar["x"] < geo["vw"] / 2 and bar["y"] < 100,
+              f"bar starts {round(bar['x'], 1)}, {round(bar['y'], 1)} down")
+        # The menu button is what the fourth control can collide with, and a
+        # touch target needs real clearance, not a rect that merely does not
+        # overlap.
+        check(f"{label}: it clears the menu button",
+              burger is None or bar["right"] <= burger["x"] - 12,
+              f"bar ends {round(bar['right'], 1)}"
+              + (f", button at {round(burger['x'], 1)}" if burger else ", no button"))
+        check(f"{label}: nothing pushes the page sideways", geo["scrollW"] <= geo["vw"],
+              f"scroll width {geo['scrollW']} of {geo['vw']}")
+        p.close()
 
     # Every cell carries a slice, the logo cell included, at both widths
     for w, h, label in ((1600, 900, "desktop"), (430, 932, "mobile")):
-        p = open_page(b, "", w, h)
+        p = open_page(b, None, w, h)
         r = p.evaluate(
             """() => {
             const c = [...document.querySelectorAll('.hero-grid .cell')];
