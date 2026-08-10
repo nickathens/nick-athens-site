@@ -36,6 +36,49 @@ const cellColors = [
     '#9b5de5', '#f15bb5', '#00bbf9', '#00f5d4', '#fee440'
 ];
 
+// Hero photo. Sliced across the grid, one piece per cell.
+// aspect is the source's own ratio and is used to cover-fit the slices.
+// focusX is where a portrait viewport takes its crop from: 0 is the left edge,
+// 1 the right. It only bites when the frame has to be cropped horizontally,
+// which on this photo is where the colour lives.
+const HERO_PHOTO = { src: 'images/hero-sky.webp', aspect: 3072 / 2048, focusX: 0.78 };
+const GRID_GAP = 2; // must match the gap in .hero-grid
+const HERO_LIT = { ratio: 0.85 }; // share of tiles showing photo at any moment
+
+// The synth paints this layer, not the cell, so the photo slice survives underneath
+function tintOf(cell) {
+    return cell.querySelector('.tint') || cell;
+}
+
+// Preview knobs, inert unless the query string asks for them.
+//   ?sky=3|4|5|6  how far the photo's own regional colour is amplified
+//   ?dim=0..1     grid opacity over the black page
+// These exist so the look can be judged on a real device. Drop them, and the
+// spare hero-sky-k*.webp files, once the setting is chosen.
+(function applyHeroPreviewParams() {
+    const params = new URLSearchParams(window.location.search);
+
+    const sky = params.get('sky');
+    if (sky && /^[3-6]$/.test(sky)) {
+        HERO_PHOTO.src = sky === '5' ? 'images/hero-sky.webp' : `images/hero-sky-k${sky}.webp`;
+    }
+
+    const dim = parseFloat(params.get('dim'));
+    if (!Number.isNaN(dim) && dim >= 0 && dim <= 1) {
+        document.documentElement.style.setProperty('--hero-opacity', dim);
+    }
+
+    const on = parseFloat(params.get('on'));
+    if (!Number.isNaN(on) && on >= 0 && on <= 1) {
+        HERO_LIT.ratio = on;
+    }
+
+    const fx = parseFloat(params.get('fx'));
+    if (!Number.isNaN(fx) && fx >= 0 && fx <= 1) {
+        HERO_PHOTO.focusX = fx;
+    }
+})();
+
 // Audio context for synthesized notes - initialize once and keep alive
 let audioContext = null;
 let tuningEnabled = true;
@@ -512,8 +555,10 @@ function activateCell(cell) {
     cell.dataset.wasOff = wasOff ? 'true' : 'false';
 
     // Clear any existing animation and set color immediately
+    const tint = tintOf(cell);
     cell.style.transition = 'none';
-    cell.style.backgroundColor = color;
+    tint.style.transition = 'none';
+    tint.style.backgroundColor = color;
     cell.style.opacity = '1';
     if (wasOff) cell.classList.remove('off');
 
@@ -549,17 +594,19 @@ function updateCellColor(cell, deltaX, deltaY) {
     const newSat = Math.max(20, Math.min(100, baseSat + satShift));
     const newLight = Math.max(20, Math.min(80, baseLight + lightShift));
 
-    cell.style.backgroundColor = `hsl(${newHue}, ${newSat}%, ${newLight}%)`;
+    tintOf(cell).style.backgroundColor = `hsl(${newHue}, ${newSat}%, ${newLight}%)`;
 }
 
 // Fade cell color when note is released - synced with audio fade
 function fadeCell(cell, fadeTime) {
     const wasOff = cell.dataset.wasOff === 'true';
+    const tint = tintOf(cell);
 
     // Start fade transition synced with audio
     requestAnimationFrame(() => {
-        cell.style.transition = `background-color ${fadeTime}s ease-out, opacity ${fadeTime}s ease-out`;
-        cell.style.backgroundColor = 'transparent';
+        cell.style.transition = `opacity ${fadeTime}s ease-out`;
+        tint.style.transition = `background-color ${fadeTime}s ease-out`;
+        tint.style.backgroundColor = 'transparent';
         if (wasOff) {
             cell.style.opacity = '0';
         }
@@ -568,7 +615,8 @@ function fadeCell(cell, fadeTime) {
     // Reset after animation completes
     setTimeout(() => {
         cell.style.transition = 'opacity 0.5s ease';
-        cell.style.backgroundColor = '';
+        tint.style.transition = '';
+        tint.style.backgroundColor = '';
         cell.style.opacity = '';
         if (wasOff) cell.classList.add('off');
         delete cell.dataset.activeColor;
@@ -594,6 +642,20 @@ function initHeroGrid() {
     const centerRow = Math.floor(rows / 2);
     const centerCol = Math.floor(cols / 2);
     const centerIndex = centerRow * cols + centerCol;
+
+    // Cover-fit the photo across the whole grid box, then hand each cell the
+    // slice that falls behind it. Computed in pixels rather than percentages
+    // so the 2px gaps do not accumulate a drift across the row, and so a
+    // portrait phone crops the landscape frame instead of squashing it.
+    const box = grid.getBoundingClientRect();
+    const gridW = box.width || window.innerWidth;
+    const gridH = box.height || window.innerHeight;
+    const cellW = (gridW - GRID_GAP * (cols - 1)) / cols;
+    const cellH = (gridH - GRID_GAP * (rows - 1)) / rows;
+    const photoW = gridW / gridH > HERO_PHOTO.aspect ? gridW : gridH * HERO_PHOTO.aspect;
+    const photoH = photoW / HERO_PHOTO.aspect;
+    const photoX = (gridW - photoW) * HERO_PHOTO.focusX;
+    const photoY = (gridH - photoH) / 2;
 
     // Create cells
     for (let i = 0; i < totalCells; i++) {
@@ -622,8 +684,21 @@ function initHeroGrid() {
                 playWavePattern();
             });
         } else {
+            // This cell's slice of the photo
+            const col = i % cols;
+            const row = Math.floor(i / cols);
+            cell.style.backgroundImage = `url('${HERO_PHOTO.src}')`;
+            cell.style.backgroundSize = `${photoW}px ${photoH}px`;
+            cell.style.backgroundPosition =
+                `${photoX - col * (cellW + GRID_GAP)}px ${photoY - row * (cellH + GRID_GAP)}px`;
+
+            // Colour layer for the synth, kept separate from the photo
+            const tint = document.createElement('i');
+            tint.className = 'tint';
+            cell.appendChild(tint);
+
             // Random initial state for non-logo cells
-            if (Math.random() > 0.5) {
+            if (Math.random() >= HERO_LIT.ratio) {
                 cell.classList.add('off');
             }
 
@@ -650,12 +725,14 @@ function initHeroGrid() {
     const cells = grid.querySelectorAll('.cell:not(.logo-cell)');
 
     function animateCells() {
-        // Pick random cells to toggle
+        // Pick random cells and re-roll them against the lit ratio. Re-rolling
+        // rather than flipping is what holds the ratio steady: a blind toggle
+        // is a random walk that settles at half lit whatever it started at.
         const numToToggle = Math.floor(Math.random() * 5) + 3;
 
         for (let i = 0; i < numToToggle; i++) {
             const randomIndex = Math.floor(Math.random() * cells.length);
-            cells[randomIndex].classList.toggle('off');
+            cells[randomIndex].classList.toggle('off', Math.random() >= HERO_LIT.ratio);
         }
     }
 

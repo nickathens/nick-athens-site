@@ -242,16 +242,30 @@ body {
     grid-template-columns: repeat(var(--cols, 12), 1fr);
     grid-template-rows: repeat(var(--rows, 8), 1fr);
     gap: 2px;
-    opacity: 0.4;
+    opacity: var(--hero-opacity, 0.8);
 }
 
+/* Each cell carries its own slice of the hero photo. JS sets background-size
+   and background-position per cell so the slices reassemble into one image
+   across the gaps. The white background is the fallback if the photo fails. */
 .hero-grid .cell {
-    background: var(--white);
+    position: relative;
+    background-color: var(--white);
+    background-repeat: no-repeat;
     transition: opacity 0.5s ease;
 }
 
 .hero-grid .cell.off {
     opacity: 0;
+}
+
+/* Synth colour layer. Sits over the photo slice so a held cell reads as solid
+   colour, then fades back to reveal the photo underneath on release. */
+.hero-grid .cell .tint {
+    position: absolute;
+    inset: 0;
+    background-color: transparent;
+    pointer-events: none;
 }
 
 .hero-grid .cell.logo-cell {
