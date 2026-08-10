@@ -41,7 +41,30 @@ const cellColors = [
 // focusX is where a portrait viewport takes its crop from: 0 is the left edge,
 // 1 the right. It only bites when the frame has to be cropped horizontally,
 // which on this photo is where the colour lives.
-const HERO_PHOTO = { src: 'images/hero-sky.webp', aspect: 3072 / 2048, focusX: 0.78 };
+// Two densities of the same scan. The grid cover-fits the photo across the whole
+// viewport, so the pixels the browser is asked to paint are the viewport times
+// the device ratio, not the CSS width: a 393pt phone at ratio 3 paints this at
+// 3834 device pixels. Against a single 1920 asset that is a 2x upscale of a file
+// whose film grain the encoder had already thrown away, which is what read as
+// mush with the grid lines standing out of it. The 2x asset is the source scan
+// at its own resolution, so that phone now upscales 1.25x and a ratio-2 laptop
+// paints it 1:1.
+const HERO_PHOTO = {
+    src: 'images/hero-sky.webp',
+    src2x: 'images/hero-sky@2x.webp',
+    aspect: 3072 / 2048,
+    focusX: 0.78,
+};
+
+// image-set picks the density; the plain url() before it is the fallback. A
+// browser that cannot parse image-set rejects the second assignment and keeps
+// the first, so this cannot leave a cell with no photo at all. Both land in the
+// same tick, so only the surviving value is ever fetched.
+function paintPhoto(cell) {
+    cell.style.backgroundImage = `url('${HERO_PHOTO.src}')`;
+    cell.style.backgroundImage =
+        `image-set(url('${HERO_PHOTO.src}') 1x, url('${HERO_PHOTO.src2x}') 2x)`;
+}
 const GRID_GAP = 2; // must match the gap in .hero-grid
 const HERO_LIT = { ratio: 0.85 }; // share of tiles showing photo at any moment
 
@@ -71,29 +94,43 @@ let tuningEnabled = true;
 let synthVolume = 0.5; // 0-1 range, default 50%
 let smartHarmony = false; // When true, notes are harmonically intelligent
 
-// Oscillator shape, picked in the nav. Saw is the default: it is the richest of
-// the four, so the low-pass filter and the drag gestures have most to work on.
+// Oscillator shape, picked in the nav. The nav paints itself from this variable
+// rather than from the markup, so this line is the only place the default lives.
 const SYNTH_WAVEFORMS = ['sine', 'triangle', 'square', 'sawtooth'];
-let synthWaveform = 'sawtooth';
+let synthWaveform = 'square';
 
 // Plate reverb. One bus for the whole grid, not one per note: a convolver per
 // press would build a new impulse response on every touch.
 //
-// What makes it read as a plate rather than a room: the response is dense from
-// its first sample, so there is no pre-delay and no discrete early reflections,
-// and the low end is taken out before the convolver because a plate has very
-// little of it. The highs are damped inside the response itself, which keeps
-// the bloom bright without turning a saw wave into hiss.
-// Two of these numbers were measured rather than picked. The response has to
-// outlast the note's own 2.5s release or there is no bloom to hear at all: at
-// 1.6s the plate lived entirely inside the note's envelope and added width but
-// not one millisecond of tail. And the notes run from C2 at 65Hz upward, so a
-// send highpass in the usual 300Hz region took the fundamental out of the plate
-// across half the keyboard.
-const PLATE_SECONDS = 2.8;   // RT60 of the response
-const PLATE_SEND = 0.30;     // wet level off each note, kept deliberately low
-const PLATE_HIGHPASS = 180;  // Hz, what never reaches the plate
-const PLATE_DAMPING = 0.35;  // one-pole coefficient at the end of the tail
+// What makes it read as a plate rather than a room: no discrete early
+// reflections, dense from the first sample after the pre-delay, and the low end
+// taken out before the convolver because a plate has very little of it. The
+// highs are damped inside the response itself, which keeps the bloom bright
+// without turning a saw wave into hiss.
+//
+// Every number here was measured rather than picked, and the first version of
+// this bus was inaudible for reasons no single one of them explains:
+//
+// - RT60 has to beat the note's own release, not merely outlast it. Measured at
+//   the output, the dry falls at 15.0 dB/s, dead steady across pitches. At 2.8s
+//   the plate fell at the same rate, so it sat the same distance under the thing
+//   masking it the whole way down and was never heard; at 4.2s the margin was
+//   3.3 dB/s and at 5.5s it is 4.7, which is about 12dB of clear air by the time
+//   the dry is gone. Longer than that stops being a plate and becomes a hall.
+// - A plate with no pre-delay merges into the dry and is heard as tone colour
+//   rather than as space. 28ms is the cheapest audibility there is: it costs no
+//   level at all, it just stops the wet arriving at the same instant as the note.
+// - The send has to stop when the key does. Feeding it from the note gain meant
+//   the plate's input decayed with the note, so the wet chased the dry down and
+//   there was never a moment where the tail was the only thing sounding.
+//   releaseNote now drops that one connection at the release instant.
+// - The notes run from C2 at 65Hz upward, so a send highpass in the usual 300Hz
+//   region took the fundamental out of the plate across half the keyboard.
+const PLATE_SECONDS = 5.5;     // RT60 of the response
+const PLATE_PREDELAY = 0.028;  // seconds of silence before the response starts
+const PLATE_SEND = 0.45;       // wet level off each note
+const PLATE_HIGHPASS = 180;    // Hz, what never reaches the plate
+const PLATE_DAMPING = 0.35;    // one-pole coefficient at the end of the tail
 let plateReverb = null;
 
 // Root lock system - keeps the same root for multiple chord triggers
@@ -276,15 +313,19 @@ function ensureAudioContext() {
 // spreads wide, decaying to -60dB across the buffer, low-passed by a one-pole
 // that closes as the tail dies so the highs fade first.
 function makePlateResponse(ctx) {
-    const length = Math.max(1, Math.floor(PLATE_SECONDS * ctx.sampleRate));
+    const pre = Math.floor(PLATE_PREDELAY * ctx.sampleRate);
+    const decay = Math.max(1, Math.floor(PLATE_SECONDS * ctx.sampleRate));
+    const length = pre + decay;
     const response = ctx.createBuffer(2, length, ctx.sampleRate);
     let energy = 0;
 
     for (let channel = 0; channel < 2; channel++) {
         const data = response.getChannelData(channel);
         let smoothed = 0;
-        for (let i = 0; i < length; i++) {
-            const t = i / length;
+        // The first `pre` samples are left at zero. Silence carries no energy,
+        // so it does not dilute the normalisation below.
+        for (let i = pre; i < length; i++) {
+            const t = (i - pre) / decay;
             // 6.9078 = ln(1000), so the tail is 60dB down at the far end
             const amplitude = Math.exp(-6.9078 * t);
             const coefficient = 1 - (1 - PLATE_DAMPING) * t;
@@ -408,8 +449,8 @@ function playTuningNote(cell) {
 
     // Feed the plate from the same point, so the wet follows the volume slider,
     // the filter and the pitch drag exactly as a send off a channel would.
-    // releaseNote disconnects this gain, which cuts the send and leaves the
-    // plate to ring out on its own.
+    // releaseNote drops this one connection at the release instant, so the plate
+    // stops being fed while the dry is still fading and the tail is left exposed.
     const plate = ensurePlateReverb(ctx);
     if (plate) gainNode.connect(plate.send);
 
@@ -464,6 +505,9 @@ function playTuningNote(cell) {
         startY: null,
         cell: cell,
         released: false,
+        // The exact node the send was made to, so release drops that one
+        // connection and nothing else, even if the bus is rebuilt meanwhile.
+        plateSend: plate ? plate.send : null,
         // Keep single-note compatibility
         get oscillator() { return this.oscillators[0]; },
         get filter() { return this.filters[0]; }
@@ -532,6 +576,13 @@ function releaseNote(note) {
     const ctx = note.gainNode.context;
     const now = ctx.currentTime;
     const fadeTime = 2.5;
+
+    // Stop feeding the plate now, at full level, rather than letting the send
+    // ride the 2.5s fade down. Convolution output is continuous across a step in
+    // its input, so cutting the feed cannot click: it only ends the tail's cause.
+    if (note.plateSend) {
+        try { note.gainNode.disconnect(note.plateSend); } catch (e) {}
+    }
 
     // Cancel any scheduled gain changes and fade out over 2.5 seconds
     note.gainNode.gain.cancelScheduledValues(now);
@@ -760,7 +811,7 @@ function initHeroGrid() {
         // included, so the sky runs unbroken behind the mark.
         const col = i % cols;
         const row = Math.floor(i / cols);
-        cell.style.backgroundImage = `url('${HERO_PHOTO.src}')`;
+        paintPhoto(cell);
         cell.style.backgroundSize = `${photoW}px ${photoH}px`;
         cell.style.backgroundPosition =
             `${photoX - col * (cellW + GRID_GAP)}px ${photoY - row * (cellH + GRID_GAP)}px`;

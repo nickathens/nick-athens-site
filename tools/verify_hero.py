@@ -16,6 +16,7 @@ Usage: python tools/verify_hero.py [url]
 """
 import colorsys
 import io
+import math
 import statistics
 import sys
 import urllib.parse
@@ -88,10 +89,20 @@ def check(name, cond, detail=""):
 AUDIO_TAP = """
 window.__audio = {};
 window.__edges = [];
+window.__cuts = [];
 const rawConnect = AudioNode.prototype.connect;
 AudioNode.prototype.connect = function (destination, ...rest) {
     window.__edges.push([this, destination]);
     return rawConnect.call(this, destination, ...rest);
+};
+// Removals are recorded as well as additions. The send is meant to be dropped
+// at the release instant rather than at the teardown 2.55s later, and a count
+// of live edges cannot tell those two apart: both end with the edge gone.
+const rawDisconnect = AudioNode.prototype.disconnect;
+AudioNode.prototype.disconnect = function (...rest) {
+    window.__cuts.push([this, rest[0] === undefined ? 'all' : rest[0],
+                        Math.round(performance.now())]);
+    return rawDisconnect.apply(this, rest);
 };
 const RealAC = window.AudioContext || window.webkitAudioContext;
 const destDesc = Object.getOwnPropertyDescriptor(
@@ -153,10 +164,15 @@ window.__response = () => {
         ll += left[i] * left[i];
         rr += right[i] * right[i];
     }
+    const ms = n => Math.floor(b.sampleRate * n / 1000);
     return {
         channels: b.numberOfChannels,
         seconds: b.duration,
         firstMs: rms(left, 0, Math.floor(b.sampleRate / 1000)),
+        // The pre-delay window and the window just after it. A plate with the
+        // pre-delay removed reads the same in every other field in here.
+        preGap: rms(left, 0, ms(20)),
+        afterGap: rms(left, ms(30), ms(60)),
         early: rms(left, 0, Math.floor(b.length * 0.05)),
         late: rms(left, Math.floor(b.length * 0.9), b.length),
         correlation: dot / Math.sqrt(ll * rr),
@@ -466,9 +482,9 @@ with sync_playwright() as pw:
     start = wave_state(p)
     check("the four shapes are offered in order",
           start["order"] == ["sine", "triangle", "square", "sawtooth"], f"{start['order']}")
-    check("saw is armed on arrival, and only saw",
-          start["active"] == ["sawtooth"] and start["checked"] == ["sawtooth"]
-          and start["armed"] == "sawtooth",
+    check("square is armed on arrival, and only square",
+          start["active"] == ["square"] and start["checked"] == ["square"]
+          and start["armed"] == "square",
           f"active {start['active']}, aria {start['checked']}, armed {start['armed']}")
     # The armed button has to look armed. Reading the class alone would pass
     # with the .is-active rule deleted, leaving a selector with no selection.
@@ -487,8 +503,8 @@ with sync_playwright() as pw:
     check("the armed button is drawn differently from the rest", paint["on"] != paint["off"],
           f"armed {paint['on']}, others {paint['off']}")
     default_waves = press_cell(p, box)
-    check("an untouched page still plays saw",
-          bool(default_waves) and set(default_waves) == {"sawtooth"}, f"{default_waves}")
+    check("an untouched page plays square",
+          bool(default_waves) and set(default_waves) == {"square"}, f"{default_waves}")
     p.wait_for_timeout(2600)
 
     for wave, label in (("sine", "Sin"), ("triangle", "Tri"), ("square", "Sqr"), ("sawtooth", "Saw")):
@@ -543,13 +559,23 @@ with sync_playwright() as pw:
     check("the plate bus is built with the audio context", ir is not None and wiring is not None)
     if ir and wiring:
         check("the response is stereo", ir["channels"] == 2, f"{ir['channels']} channels")
-        check("the response outlasts the note's own 2.5s release",
-              ir["seconds"] > 2.55, f"{round(ir['seconds'], 2)}s")
-        # A plate has no pre-delay and no discrete early reflections: it is dense
-        # from its first sample. A room response would be near silent here.
-        check("the response is dense from its first millisecond",
-              ir["firstMs"] > ir["early"] * 0.5,
-              f"first ms {ir['firstMs']:.5f} against early {ir['early']:.5f}")
+        # Merely beating 2.55s is not enough and that is why this bar moved. The
+        # dry falls 60dB in 2.5s; a 2.8s plate falls at nearly the same rate, so
+        # it stayed the same distance under the thing masking it the whole way
+        # down and was never heard. It has to decay slower than the dry, not just
+        # end later, which puts the floor near 4s rather than near 2.5.
+        check("the response decays slower than the note it hides under",
+              ir["seconds"] > 3.8, f"{round(ir['seconds'], 2)}s against a 2.5s release")
+        # A plate has no discrete early reflections, but it does need a pre-delay
+        # or it arrives with the note and is heard as tone colour rather than as
+        # space. This pair pins both halves: the gap is quiet, and what follows
+        # it is at full density rather than a slow build.
+        check("nothing sounds during the pre-delay",
+              ir["preGap"] < ir["early"] * 0.15,
+              f"first 20ms {ir['preGap']:.6f} against early {ir['early']:.5f}")
+        check("the response is dense the moment the pre-delay ends",
+              ir["afterGap"] > ir["early"] * 0.5,
+              f"30-60ms {ir['afterGap']:.5f} against early {ir['early']:.5f}")
         check("the response decays to a tail", ir["late"] < ir["early"] * 0.05,
               f"late {ir['late']:.6f} against early {ir['early']:.5f}")
         check("the two sides of the plate are decorrelated",
@@ -569,8 +595,68 @@ with sync_playwright() as pw:
               f"{wiring['voicesIntoSend']} into the send, "
               f"{wiring['voicesIntoOutput']} into the output")
 
-    wet_on = hold_and_read()
+    # The release behaviour, which is the whole reason the first plate could not
+    # be heard. Every check above this point passed on that version too: the bus
+    # was built, wired, stereo and present in the output, and none of that says
+    # anything about whether a tail is ever exposed.
+    # 50ms apart across the fall, then a straight line through the decibels. Two
+    # point samples were tried first and were useless: a reverb tail is noise, so
+    # a single 46ms analyser window on it swings several dB, and the two point
+    # reading put a 5.5s plate below a 4.2s one, which is not physically possible.
+    TRACK = """(ms) => new Promise(res => {
+        const rows = [];
+        const t0 = performance.now();
+        const id = setInterval(() => {
+            rows.push([performance.now() - t0, window.__level().mid, window.__wetLevel()]);
+            if (performance.now() - t0 > ms) { clearInterval(id); res(rows); }
+        }, 50);
+    })"""
+
+    def fall(send):
+        """Press, release, and follow the decay. Returns dB/s for dry and wet."""
+        p.evaluate("(v) => { plateReverb.send.gain.value = v; }", send)
+        p.evaluate("() => { window.__cuts = []; }")
+        p.mouse.move(cx, cy)
+        p.mouse.down()
+        p.wait_for_timeout(900)
+        p.mouse.up()
+        rows = p.evaluate(TRACK, 2400)
+        cut = p.evaluate("() => window.__cuts.some(c => c[1] === window.__plate().send)")
+        p.wait_for_timeout(4300)
+        out = []
+        for col in (1, 2):
+            pts = [(r[0] / 1000, 20 * math.log10(r[col])) for r in rows
+                   if 300 <= r[0] <= 2200 and r[col] and r[col] > 1e-7]
+            out.append(statistics.linear_regression(*zip(*pts)).slope if len(pts) > 8 else 0.0)
+        return out[0], out[1], cut
+
+    # Read before the dry-only pass, which sets the send to zero. Reading it
+    # after would measure the plate against a plate that had been switched off.
     shipped_send = p.evaluate("() => plateReverb.send.gain.value")
+    dry_slope, _, cut_early = fall(0)
+    # The send is dropped at the release instant, and the note's own teardown is
+    # 2.55s later, so a cut recorded within this 2.4s window can only be the one
+    # under test. The dry-only pass carries it because a torn down note in the
+    # previous pass cannot contaminate a list cleared at the start of this one.
+    check("the send is cut at the release, not at the teardown 2.5s later", cut_early)
+
+    # The reading that separates a plate you can hear from one you cannot, and it
+    # needs no absolute level: each signal is measured against itself, so the
+    # random pitch cannot move it. A send fed from the note gain decays with the
+    # note, so the two slopes match and the wet stays the same distance
+    # underneath the dry the whole way down, which is exactly what the first
+    # version of this bus did. Cut at the release, the plate falls at its own
+    # RT60 instead and comes out from under it. Median of three because the
+    # plate answers each pitch differently: at 5.5s three presses read -10.1,
+    # -10.3 and -16.3 with nothing changed, while the dry read -15.0 every time.
+    wet_slopes = sorted(fall(shipped_send)[1] for _ in range(3))
+    wet_slope = wet_slopes[1]
+    check("the tail outlives the note rather than falling with it",
+          wet_slope > dry_slope + 2.5,
+          f"wet {wet_slope:.1f} dB/s (of {[round(x, 1) for x in wet_slopes]}) "
+          f"against dry {dry_slope:.1f} dB/s")
+
+    wet_on = hold_and_read()
     p.evaluate("() => { plateReverb.send.gain.value = 0; }")
     wet_off = hold_and_read()
     width_on = wet_on["side"] / max(wet_on["mid"], 1e-9)
@@ -666,6 +752,92 @@ with sync_playwright() as pw:
         check(f"{label}: every cell has a photo slice", r["n"] == r["photo"], f"{r['photo']}/{r['n']}")
         p.close()
 
+    # Which density each device actually downloads, and how far it then has to
+    # stretch it. The grid cover-fits the photo across the viewport, so the
+    # pixels asked for are the viewport times the device ratio: reading the CSS
+    # width alone says 1278px on a phone and hides a 2x upscale completely.
+    for w, h, dpr, want, label in (
+        (393, 852, 3, "hero-sky@2x.webp", "phone at ratio 3"),
+        (1512, 982, 2, "hero-sky@2x.webp", "laptop at ratio 2"),
+        (1920, 1080, 1, "hero-sky.webp", "desktop at ratio 1"),
+    ):
+        seen = []
+        p = b.new_page(viewport={"width": w, "height": h}, device_scale_factor=dpr)
+        p.on("response", lambda r, s=seen: s.append(r.url.rsplit("/", 1)[-1])
+             if "hero-sky" in r.url else None)
+        p.add_init_script("localStorage.setItem('synthDiscovered', 'true');")
+        p.goto(URL, wait_until="networkidle")
+        p.wait_for_timeout(1600)
+        css_w = float(p.evaluate(
+            """() => getComputedStyle(
+                document.querySelector('.hero-grid .cell')).backgroundSize.split('px')[0]"""
+        ))
+        p.close()
+        fetched = sorted(set(seen))
+        check(f"{label} gets the right density", fetched == [want], f"fetched {fetched}")
+        # Both densities being fetched would be a silent doubling of the page
+        # weight that the density check above would not notice.
+        check(f"{label} downloads one file, not both", len(fetched) == 1, f"{fetched}")
+        served_w = 3072 if want.endswith("@2x.webp") else 1920
+        scale = css_w * dpr / served_w
+        check(f"{label} stretches it less than 1.4x", scale < 1.4,
+              f"{round(css_w * dpr)} device px from {served_w}, {scale:.2f}x")
+
+    # image-set decides the density, and a browser that cannot parse it must be
+    # left with the plain url() rather than with no photo at all. Driven by
+    # rejecting the image-set value at the CSSOM, which is exactly what such a
+    # browser does, rather than by reading the source for the fallback line.
+    p = b.new_page(viewport={"width": 1600, "height": 900})
+    p.add_init_script("localStorage.setItem('synthDiscovered', 'true');")
+    # Two earlier versions of this blocker failed silently and the check passed
+    # anyway, which is worth recording. Patching CSSStyleDeclaration.prototype
+    # does nothing, because Blink hangs the CSS properties off each instance: it
+    # threw in the init script, the grid never built, and the check read 0 of 0
+    # cells as a pass. Reading the instance's own descriptor and guarding on it
+    # then skipped the patch entirely and reported the unpatched page. Going
+    # through setProperty works because that one really is on the prototype, and
+    # the control below is what proves the blocker blocks.
+    p.add_init_script(
+        """
+        const create = document.createElement.bind(document);
+        document.createElement = function (tag, ...rest) {
+            const el = create(tag, ...rest);
+            Object.defineProperty(el.style, 'backgroundImage', {
+                configurable: true,
+                get: () => el.style.getPropertyValue('background-image'),
+                set: v => {
+                    if (String(v).includes('image-set')) return;
+                    el.style.setProperty('background-image', v);
+                },
+            });
+            return el;
+        };
+    """
+    )
+    p.goto(URL, wait_until="networkidle")
+    p.wait_for_timeout(1600)
+    fb = p.evaluate(
+        """() => {
+        const c = [...document.querySelectorAll('.hero-grid .cell')];
+        return { n: c.length,
+                 photo: c.filter(x => (x.style.backgroundImage || '').includes('hero-sky')).length,
+                 set: c.filter(x => (x.style.backgroundImage || '').includes('image-set')).length };
+    }"""
+    )
+    p.close()
+    check("a browser without image-set still gets the photo",
+          fb["n"] > 50 and fb["n"] == fb["photo"] and fb["set"] == 0,
+          f"{fb['photo']}/{fb['n']} with a photo, {fb['set']} using image-set")
+    # Without this the check above passes on a blocker that blocked nothing.
+    p = open_page(b)
+    control = p.evaluate(
+        """() => [...document.querySelectorAll('.hero-grid .cell')]
+                 .filter(x => (x.style.backgroundImage || '').includes('image-set')).length"""
+    )
+    p.close()
+    check("that blocker really does block image-set", control > 50,
+          f"{control} cells use image-set unblocked, {fb['set']} blocked")
+
     # The slice checks above pass whether the sky reads as cloud or as a smear,
     # which is how the first version shipped as a colour wash. These score the
     # asset the server actually hands out, through the portrait crop a phone
@@ -702,6 +874,25 @@ with sync_playwright() as pw:
     check("that reading can tell a flat sky apart", flat_form < 9.0,
           f"blurred control scored {flat_form:.2f}")
     check("the colour survived the clarity pass", sat > 24.0, f"saturation {sat:.1f}%")
+
+    # The grain is not decoration. The grade multiplies the regional chroma five
+    # times and leans on the grain to dither those gradients, so an encoder that
+    # smooths it away takes the dithering with it and the sky separates into
+    # patches. The cloud-form check above passes on a grainless file: it reads a
+    # band far coarser than a grain of film. This reads the grain itself, off the
+    # asset a phone is actually handed.
+    asset2x = urllib.request.Request(
+        urllib.parse.urljoin(URL, "images/hero-sky@2x.webp"),
+        headers={"User-Agent": "nick-athens-site verify_hero"},
+    )
+    big = Image.open(io.BytesIO(urllib.request.urlopen(asset2x, timeout=30).read()))  # noqa: S310
+    big = big.convert("RGB")
+    grain2x = build_hero_image.grain(big)
+    check("the 2x asset is the scan's own width", big.size[0] >= 3072, f"{big.size[0]}px")
+    # 1.01 is what the 1920/q82 asset that shipped as mush measured. The floor
+    # sits above it so this cannot be satisfied by the file it replaced.
+    check("the phone's asset kept its film grain", grain2x > 2.5,
+          f"grain {grain2x:.2f}, the smoothed asset it replaces scored 1.01")
     b.close()
 
 print("\n" + ("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}"))

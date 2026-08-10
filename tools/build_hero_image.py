@@ -40,8 +40,20 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "tools" / "hero-sky-source.jpg"
 OUT_DIR = ROOT / "images"
 
-WIDTH = 1920          # long edge of the shipped asset
-QUALITY = 82          # webp quality, chosen by eye on a 1:1 crop
+# Two densities. The 1x is what a ratio-1 desktop needs to paint the grid at
+# 1:1; the 2x is the source scan at its own resolution, which is what a ratio-2
+# laptop and a ratio-3 phone need. Widths and qualities were measured against how
+# much of the scan's film grain survives the encoder, because the grain is not
+# decoration here: the grade multiplies the regional chroma five times and the
+# grain is the only thing dithering those gradients. At the 1920/q82 this asset
+# originally shipped at, 59 percent of it was gone by the time the browser had
+# it, and a 2x upscale on a phone smeared what was left. Grain retained against
+# the pre-encode file: 1920/q88 66 percent, 3072/q78 73 percent, 3072/q82 80
+# percent for 251KB more, which is not worth it.
+WIDTH = 1920          # long edge of the 1x asset
+WIDTH_2X = 3072       # long edge of the 2x asset, the scan's own width
+QUALITY = 88          # webp quality for 1x
+QUALITY_2X = 78       # webp quality for 2x
 BLUR_DIVISOR = 24     # chroma gaussian radius = width / this
 FORM_DIVISOR = 48     # luma base radius, the scale a cloud mass occupies
 GRAIN_DIVISOR = 400   # luma grain radius, everything finer than a cloud edge
@@ -93,6 +105,21 @@ def saturation_stats(img: Image.Image) -> tuple[float, float]:
     return float(sat.mean()), float(np.percentile(sat, 95))
 
 
+def grain(img: Image.Image, radius: float = 1.0) -> float:
+    """Standard deviation of everything finer than a pixel or two: the film grain.
+
+    Reported per asset because it is the number that decides the encode. The
+    grade leans on the grain to dither the amplified chroma, so an encoder that
+    smooths it away takes the dithering with it and the sky separates into
+    patches. This is measured on the asset's own pixels, so comparing two widths
+    is only meaningful against each one's own pre-encode value.
+    """
+    grey = img.convert("L")
+    a = np.asarray(grey, dtype=np.float32)
+    b = np.asarray(grey.filter(ImageFilter.GaussianBlur(radius)), dtype=np.float32)
+    return float((a - b).std())
+
+
 def cloud_form(img: Image.Image) -> float:
     """Standard deviation of the cloud-sized luma band. How much sky reads as cloud.
 
@@ -118,21 +145,30 @@ def main() -> None:
                     help="cloud-band amplification (1 is the flat original)")
     args = ap.parse_args()
 
-    src = Image.open(SOURCE).convert("RGB")
-    src = src.resize((WIDTH, round(WIDTH * src.size[1] / src.size[0])), Image.LANCZOS)
+    raw = Image.open(SOURCE).convert("RGB")
     OUT_DIR.mkdir(exist_ok=True)
 
-    targets = [(DEFAULT_K, OUT_DIR / "hero-sky.webp")]
+    targets = [
+        (DEFAULT_K, WIDTH, QUALITY, OUT_DIR / "hero-sky.webp"),
+        (DEFAULT_K, WIDTH_2X, QUALITY_2X, OUT_DIR / "hero-sky@2x.webp"),
+    ]
     if args.all:
-        targets += [(k, OUT_DIR / f"hero-sky-k{k}.webp") for k in (3, 4, 6)]
+        targets += [(k, WIDTH, QUALITY, OUT_DIR / f"hero-sky-k{k}.webp") for k in (3, 4, 6)]
 
-    for k, path in targets:
+    for k, width, quality, path in targets:
+        src = raw.resize((width, round(width * raw.size[1] / raw.size[0])), Image.LANCZOS)
         img = grade(src, k, args.clarity)
-        img.save(path, "WEBP", quality=QUALITY, method=6)
-        mean, p95 = saturation_stats(img)
-        print(f"{path.name:22s} k={k} clarity={args.clarity}  {path.stat().st_size:>7,} bytes  "
+        img.save(path, "WEBP", quality=quality, method=6)
+        # Read the grain back off the encoded file, not off `img`. The whole
+        # point of the number is what the encoder left behind, so measuring the
+        # in-memory image would report the one value that cannot be wrong.
+        written = Image.open(path).convert("RGB")
+        mean, p95 = saturation_stats(written)
+        print(f"{path.name:22s} {width}px q{quality} k={k} clarity={args.clarity}  "
+              f"{path.stat().st_size:>9,} bytes  "
               f"saturation mean {mean:.1f}%  p95 {p95:.1f}%  "
-              f"cloud form {cloud_form(img):.2f}")
+              f"cloud form {cloud_form(written):.2f}  "
+              f"grain {grain(written):.2f} of {grain(img):.2f}")
 
 
 if __name__ == "__main__":
