@@ -111,19 +111,17 @@ let synthWaveform = 'square';
 // Every number here was measured rather than picked, and the first version of
 // this bus was inaudible for reasons no single one of them explains:
 //
-// - RT60 has to beat the note's own release, not merely outlast it. Measured at
-//   the output, the dry falls at 15.0 dB/s, dead steady across pitches. At 2.8s
-//   the plate fell at the same rate, so it sat the same distance under the thing
-//   masking it the whole way down and was never heard; at 4.2s the margin was
-//   3.3 dB/s and at 5.5s it is 4.7, which is about 12dB of clear air by the time
-//   the dry is gone. Longer than that stops being a plate and becomes a hall.
+// - The response has to run well past the note. The dry is hard disconnected
+//   2.55s after the release, and everything still sounding after that instant is
+//   the plate alone. At 2.8s there was nothing left there to hear: the tail was
+//   already 52dB under the note's own peak. At 5.5s that window is where the
+//   reverb actually lives. Longer stops being a plate and becomes a hall.
 // - A plate with no pre-delay merges into the dry and is heard as tone colour
 //   rather than as space. 28ms is the cheapest audibility there is: it costs no
 //   level at all, it just stops the wet arriving at the same instant as the note.
-// - The send has to stop when the key does. Feeding it from the note gain meant
-//   the plate's input decayed with the note, so the wet chased the dry down and
-//   there was never a moment where the tail was the only thing sounding.
-//   releaseNote now drops that one connection at the release instant.
+// - The send is fed from the note gain and stays connected through the release,
+//   which is what a send off a channel does. Cutting it at the release was tried
+//   and reverted: see the note in releaseNote for what it measured.
 // - The notes run from C2 at 65Hz upward, so a send highpass in the usual 300Hz
 //   region took the fundamental out of the plate across half the keyboard.
 const PLATE_SECONDS = 5.5;     // RT60 of the response
@@ -449,8 +447,8 @@ function playTuningNote(cell) {
 
     // Feed the plate from the same point, so the wet follows the volume slider,
     // the filter and the pitch drag exactly as a send off a channel would.
-    // releaseNote drops this one connection at the release instant, so the plate
-    // stops being fed while the dry is still fading and the tail is left exposed.
+    // It keeps feeding through the release, so the plate is still being refilled
+    // while the note fades, and the teardown in releaseNote ends it.
     const plate = ensurePlateReverb(ctx);
     if (plate) gainNode.connect(plate.send);
 
@@ -505,9 +503,6 @@ function playTuningNote(cell) {
         startY: null,
         cell: cell,
         released: false,
-        // The exact node the send was made to, so release drops that one
-        // connection and nothing else, even if the bus is rebuilt meanwhile.
-        plateSend: plate ? plate.send : null,
         // Keep single-note compatibility
         get oscillator() { return this.oscillators[0]; },
         get filter() { return this.filters[0]; }
@@ -577,12 +572,16 @@ function releaseNote(note) {
     const now = ctx.currentTime;
     const fadeTime = 2.5;
 
-    // Stop feeding the plate now, at full level, rather than letting the send
-    // ride the 2.5s fade down. Convolution output is continuous across a step in
-    // its input, so cutting the feed cannot click: it only ends the tail's cause.
-    if (note.plateSend) {
-        try { note.gainNode.disconnect(note.plateSend); } catch (e) {}
-    }
+    // The send is deliberately NOT cut here, and that is a reversal. The idea
+    // was that feeding the plate through the note's own 2.5s fade starved the
+    // tail, so cutting the feed at the release would leave it exposed. Measured
+    // both ways on this graph, three presses each, it is the other way round:
+    // cutting the send takes the wet at 2.3s after release from 10.2 percent of
+    // its held level down to 5.6. Of course it does. A send that stops at the
+    // release stops refilling the plate for the whole 2.5s the note is still
+    // sounding. What makes the tail audible is length, pre-delay and level, none
+    // of which needed this. The note gain is disconnected wholesale in the
+    // teardown below, which ends the feed at the right time on its own.
 
     // Cancel any scheduled gain changes and fade out over 2.5 seconds
     note.gainNode.gain.cancelScheduledValues(now);

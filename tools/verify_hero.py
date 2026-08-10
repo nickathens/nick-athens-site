@@ -16,7 +16,6 @@ Usage: python tools/verify_hero.py [url]
 """
 import colorsys
 import io
-import math
 import statistics
 import sys
 import urllib.parse
@@ -89,20 +88,10 @@ def check(name, cond, detail=""):
 AUDIO_TAP = """
 window.__audio = {};
 window.__edges = [];
-window.__cuts = [];
 const rawConnect = AudioNode.prototype.connect;
 AudioNode.prototype.connect = function (destination, ...rest) {
     window.__edges.push([this, destination]);
     return rawConnect.call(this, destination, ...rest);
-};
-// Removals are recorded as well as additions. The send is meant to be dropped
-// at the release instant rather than at the teardown 2.55s later, and a count
-// of live edges cannot tell those two apart: both end with the edge gone.
-const rawDisconnect = AudioNode.prototype.disconnect;
-AudioNode.prototype.disconnect = function (...rest) {
-    window.__cuts.push([this, rest[0] === undefined ? 'all' : rest[0],
-                        Math.round(performance.now())]);
-    return rawDisconnect.apply(this, rest);
 };
 const RealAC = window.AudioContext || window.webkitAudioContext;
 const destDesc = Object.getOwnPropertyDescriptor(
@@ -559,13 +548,14 @@ with sync_playwright() as pw:
     check("the plate bus is built with the audio context", ir is not None and wiring is not None)
     if ir and wiring:
         check("the response is stereo", ir["channels"] == 2, f"{ir['channels']} channels")
-        # Merely beating 2.55s is not enough and that is why this bar moved. The
-        # dry falls 60dB in 2.5s; a 2.8s plate falls at nearly the same rate, so
-        # it stayed the same distance under the thing masking it the whole way
-        # down and was never heard. It has to decay slower than the dry, not just
-        # end later, which puts the floor near 4s rather than near 2.5.
-        check("the response decays slower than the note it hides under",
-              ir["seconds"] > 3.8, f"{round(ir['seconds'], 2)}s against a 2.5s release")
+        # Merely clearing 2.55s is not enough, which is why this bar moved. The
+        # dry is torn down 2.55s after the release and the plate has to still
+        # have level in the window after that or there is nothing to hear: at
+        # 2.8s it was 52dB under the note's own peak there, which is the version
+        # Nick could not hear. The level itself is checked further down; this
+        # pins the one parameter that makes it reachable.
+        check("the response runs well past the note's teardown",
+              ir["seconds"] > 4.5, f"{round(ir['seconds'], 2)}s against a 2.55s teardown")
         # A plate has no discrete early reflections, but it does need a pre-delay
         # or it arrives with the note and is heard as tone colour rather than as
         # space. This pair pins both halves: the gap is quiet, and what follows
@@ -599,10 +589,17 @@ with sync_playwright() as pw:
     # be heard. Every check above this point passed on that version too: the bus
     # was built, wired, stereo and present in the output, and none of that says
     # anything about whether a tail is ever exposed.
-    # 50ms apart across the fall, then a straight line through the decibels. Two
-    # point samples were tried first and were useless: a reverb tail is noise, so
-    # a single 46ms analyser window on it swings several dB, and the two point
-    # reading put a 5.5s plate below a 4.2s one, which is not physically possible.
+    # The reading that separates a plate you can hear from one you cannot, and
+    # the one place to take it. The dry graph is hard disconnected 2.55s after
+    # the release, so anything sounding after that instant is the plate alone and
+    # nothing else: that window is where a reverb is actually heard. Everything
+    # above this point passed on the version Nick could not hear at all.
+    #
+    # It has to be an absolute level, not a decay rate. A slope check was written
+    # first and it is worthless here: with the plate slower than the dry, the wet
+    # ends up decaying at the plate's own rate whether it is still being fed or
+    # not, so the slope is the same either way. The mutation that reverted the
+    # feed walked straight through it.
     TRACK = """(ms) => new Promise(res => {
         const rows = [];
         const t0 = performance.now();
@@ -612,51 +609,41 @@ with sync_playwright() as pw:
         }, 50);
     })"""
 
-    def fall(send):
-        """Press, release, and follow the decay. Returns dB/s for dry and wet."""
-        p.evaluate("(v) => { plateReverb.send.gain.value = v; }", send)
-        p.evaluate("() => { window.__cuts = []; }")
+    def tail():
+        """Press, release, and read the plate in the window after the dry is gone.
+
+        Returned as a share of the note's own peak, so the synth's random pitch
+        and the volume setting cannot move it.
+        """
         p.mouse.move(cx, cy)
         p.mouse.down()
-        p.wait_for_timeout(900)
+        p.wait_for_timeout(300)
+        peak = max(p.evaluate("() => window.__level().mid") for _ in range(5))
+        p.wait_for_timeout(500)
         p.mouse.up()
-        rows = p.evaluate(TRACK, 2400)
-        cut = p.evaluate("() => window.__cuts.some(c => c[1] === window.__plate().send)")
-        p.wait_for_timeout(4300)
-        out = []
-        for col in (1, 2):
-            pts = [(r[0] / 1000, 20 * math.log10(r[col])) for r in rows
-                   if 300 <= r[0] <= 2200 and r[col] and r[col] > 1e-7]
-            out.append(statistics.linear_regression(*zip(*pts)).slope if len(pts) > 8 else 0.0)
-        return out[0], out[1], cut
+        rows = p.evaluate(TRACK, 3200)
+        p.wait_for_timeout(6000)
+        late = [r for r in rows if 2750 <= r[0] <= 3150]
+        mid = statistics.median([r[1] for r in late])
+        wet = statistics.median([r[2] for r in late])
+        return wet / max(peak, 1e-9) * 100, wet / max(mid, 1e-9)
 
-    # Read before the dry-only pass, which sets the send to zero. Reading it
-    # after would measure the plate against a plate that had been switched off.
-    shipped_send = p.evaluate("() => plateReverb.send.gain.value")
-    dry_slope, _, cut_early = fall(0)
-    # The send is dropped at the release instant, and the note's own teardown is
-    # 2.55s later, so a cut recorded within this 2.4s window can only be the one
-    # under test. The dry-only pass carries it because a torn down note in the
-    # previous pass cannot contaminate a list cleared at the start of this one.
-    check("the send is cut at the release, not at the teardown 2.5s later", cut_early)
-
-    # The reading that separates a plate you can hear from one you cannot, and it
-    # needs no absolute level: each signal is measured against itself, so the
-    # random pitch cannot move it. A send fed from the note gain decays with the
-    # note, so the two slopes match and the wet stays the same distance
-    # underneath the dry the whole way down, which is exactly what the first
-    # version of this bus did. Cut at the release, the plate falls at its own
-    # RT60 instead and comes out from under it. Median of three because the
-    # plate answers each pitch differently: at 5.5s three presses read -10.1,
-    # -10.3 and -16.3 with nothing changed, while the dry read -15.0 every time.
-    wet_slopes = sorted(fall(shipped_send)[1] for _ in range(3))
-    wet_slope = wet_slopes[1]
-    check("the tail outlives the note rather than falling with it",
-          wet_slope > dry_slope + 2.5,
-          f"wet {wet_slope:.1f} dB/s (of {[round(x, 1) for x in wet_slopes]}) "
-          f"against dry {dry_slope:.1f} dB/s")
+    reads = sorted(tail() for _ in range(3))
+    tail_share, only_plate = reads[1]
+    check("what is left after the dry is torn down is the plate and nothing else",
+          only_plate > 0.9, f"wet is {only_plate:.2f} of the total there")
+    # 0.35 sits between two measured populations rather than being picked: the
+    # 2.8s send-0.30 plate that shipped as inaudible reads 0.116 to 0.174 here,
+    # and this one reads 0.634 to 1.134. Three presses, median, because a plate
+    # answers each pitch differently.
+    check("the plate is still audibly ringing there",
+          tail_share > 0.35,
+          f"{tail_share:.3f}% of the note's peak (of "
+          f"{[round(r[0], 3) for r in reads]}); the version that could not be "
+          f"heard read 0.145%")
 
     wet_on = hold_and_read()
+    shipped_send = p.evaluate("() => plateReverb.send.gain.value")
     p.evaluate("() => { plateReverb.send.gain.value = 0; }")
     wet_off = hold_and_read()
     width_on = wet_on["side"] / max(wet_on["mid"], 1e-9)
