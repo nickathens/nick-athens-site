@@ -670,9 +670,14 @@ with sync_playwright() as pw:
     # which is how the first version shipped as a colour wash. These score the
     # asset the server actually hands out, through the portrait crop a phone
     # gets, which is the strict view: it keeps under a third of the frame.
-    served = urllib.request.urlopen(  # noqa: S310  (fixed scheme, own server)
-        urllib.parse.urljoin(URL, "images/hero-sky.webp"), timeout=30
-    ).read()
+    # Cloudflare sits in front of the live domain and answers the default
+    # urllib agent with 403, so the run against production died before it
+    # reached these checks rather than reporting anything about the sky.
+    asset = urllib.request.Request(
+        urllib.parse.urljoin(URL, "images/hero-sky.webp"),
+        headers={"User-Agent": "nick-athens-site verify_hero"},
+    )
+    served = urllib.request.urlopen(asset, timeout=30).read()  # noqa: S310
     sky = Image.open(io.BytesIO(served)).convert("RGB")
     form = build_hero_image.cloud_form(sky)
 
