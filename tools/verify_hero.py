@@ -80,8 +80,136 @@ def check(name, cond, detail=""):
         FAILS.append(name)
 
 
-def open_page(b, css_vars=None, w=1600, h=900):
+# Everything the page sends to its own destination is routed through a gain node
+# first, so the reverb checks read the graph the site actually builds rather
+# than a rebuilt copy of it. The splitter is what makes the width reading
+# possible: an AnalyserNode downmixes to mono on its own, and mono is exactly
+# where a decorrelated plate tail hides.
+AUDIO_TAP = """
+window.__audio = {};
+window.__edges = [];
+const rawConnect = AudioNode.prototype.connect;
+AudioNode.prototype.connect = function (destination, ...rest) {
+    window.__edges.push([this, destination]);
+    return rawConnect.call(this, destination, ...rest);
+};
+const RealAC = window.AudioContext || window.webkitAudioContext;
+const destDesc = Object.getOwnPropertyDescriptor(
+    window.BaseAudioContext.prototype, 'destination');
+function Patched() {
+    const ctx = new RealAC();
+    const tap = ctx.createGain();
+    const split = ctx.createChannelSplitter(2);
+    const anL = ctx.createAnalyser();
+    const anR = ctx.createAnalyser();
+    anL.fftSize = 2048;
+    anR.fftSize = 2048;
+    rawConnect.call(tap, split);
+    rawConnect.call(split, anL, 0);
+    rawConnect.call(split, anR, 1);
+    rawConnect.call(tap, destDesc.get.call(ctx));
+    Object.defineProperty(ctx, 'destination', { get: () => tap, configurable: true });
+    Object.assign(window.__audio, { ctx, tap, anL, anR });
+    return ctx;
+}
+window.AudioContext = Patched;
+window.webkitAudioContext = Patched;
+
+// plateReverb is a top level `let`, a script scope binding rather than a window
+// property, so it is reached by bare name. Read off window it is undefined,
+// which would report a bus that is plainly there as missing.
+window.__plate = () => (typeof plateReverb === 'undefined' ? null : plateReverb);
+
+window.__wiring = () => {
+    const p = window.__plate();
+    if (!p) return null;
+    const edge = (a, c) => window.__edges.some(e => e[0] === a && e[1] === c);
+    return {
+        sendToHighpass: edge(p.send, p.highpass),
+        highpassToConvolver: edge(p.highpass, p.convolver),
+        convolverToOutput: edge(p.convolver, window.__audio.tap),
+        // A note's gain lands on both the output and the send, which is what
+        // makes this a send off the voice rather than a second signal path.
+        voicesIntoSend: window.__edges.filter(e => e[1] === p.send).length,
+        voicesIntoOutput: window.__edges.filter(
+            e => e[1] === window.__audio.tap && e[0] !== p.convolver).length,
+    };
+};
+
+window.__response = () => {
+    const p = window.__plate();
+    if (!p || !p.convolver.buffer) return null;
+    const b = p.convolver.buffer;
+    const left = b.getChannelData(0);
+    const right = b.getChannelData(1);
+    const rms = (a, s, e) => {
+        let x = 0;
+        for (let i = s; i < e; i++) x += a[i] * a[i];
+        return Math.sqrt(x / (e - s));
+    };
+    let dot = 0, ll = 0, rr = 0;
+    for (let i = 0; i < b.length; i++) {
+        dot += left[i] * right[i];
+        ll += left[i] * left[i];
+        rr += right[i] * right[i];
+    }
+    return {
+        channels: b.numberOfChannels,
+        seconds: b.duration,
+        firstMs: rms(left, 0, Math.floor(b.sampleRate / 1000)),
+        early: rms(left, 0, Math.floor(b.length * 0.05)),
+        late: rms(left, Math.floor(b.length * 0.9), b.length),
+        correlation: dot / Math.sqrt(ll * rr),
+        normalize: p.convolver.normalize,
+    };
+};
+
+// An extra analyser on the shipped convolver. An extra connection changes no
+// audio, and it is the only way to read the wet on its own, which is the direct
+// statement of how much of what is heard is plate.
+window.__tapWet = () => {
+    const p = window.__plate();
+    if (!p) return false;
+    const wet = window.__audio.ctx.createAnalyser();
+    wet.fftSize = 2048;
+    rawConnect.call(p.convolver, wet);
+    window.__audio.anWet = wet;
+    return true;
+};
+
+window.__wetLevel = () => {
+    const an = window.__audio.anWet;
+    if (!an) return null;
+    const buf = new Float32Array(an.fftSize);
+    an.getFloatTimeDomainData(buf);
+    let s = 0;
+    for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+    return Math.sqrt(s / buf.length);
+};
+
+// Mid and side of what is actually leaving the page, read live.
+window.__level = () => {
+    const { anL, anR } = window.__audio;
+    const L = new Float32Array(anL.fftSize);
+    const R = new Float32Array(anR.fftSize);
+    anL.getFloatTimeDomainData(L);
+    anR.getFloatTimeDomainData(R);
+    let m = 0, s = 0;
+    for (let i = 0; i < L.length; i++) {
+        const mid = (L[i] + R[i]) / 2;
+        const side = (L[i] - R[i]) / 2;
+        m += mid * mid;
+        s += side * side;
+    }
+    return { mid: Math.sqrt(m / L.length), side: Math.sqrt(s / L.length) };
+};
+"""
+
+
+def open_page(b, css_vars=None, w=1600, h=900, tap=False):
     p = b.new_page(viewport={"width": w, "height": h})
+    if tap:
+        p.add_init_script(AUDIO_TAP)
     # Arrive as a returning visitor: the first note otherwise pops the synth
     # manual 800ms later, and every reading taken through its overlay is dark.
     p.add_init_script("localStorage.setItem('synthDiscovered', 'true');")
@@ -375,6 +503,117 @@ with sync_playwright() as pw:
         p.wait_for_timeout(2600)
     p.close()
 
+    # The plate. Every reading here is of the graph the page built for itself,
+    # and the decisive one is stereo width: the oscillators are mono, so the dry
+    # signal has no side content at all and any that appears can only be the
+    # plate. A level reading alone would not do, because a wet at -15dB moves
+    # the total by a fraction of a decibel.
+    p = open_page(b, tap=True)
+    box = settle(p)
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+    def hold_and_read(ms=700):
+        """Press, let the plate fill, read mid, side and wet, then release.
+
+        Five readings taken across the hold rather than one. The synth draws its
+        pitch at random over four octaves, and the plate's response at one pitch
+        is a different draw from its response at another, so a single window
+        makes the reading a lottery rather than a measurement.
+        """
+        p.mouse.move(cx, cy)
+        p.mouse.down()
+        p.wait_for_timeout(ms)
+        rows = []
+        for _ in range(5):
+            row = p.evaluate("() => window.__level()")
+            row["wet"] = p.evaluate("() => window.__wetLevel()")
+            rows.append(row)
+            p.wait_for_timeout(90)
+        p.mouse.up()
+        p.wait_for_timeout(3200)
+        return {k: statistics.median([r[k] for r in rows]) for k in ("mid", "side", "wet")}
+
+    # The context, and with it the bus, is built on the first gesture
+    p.mouse.click(cx, cy)
+    p.wait_for_timeout(3400)
+    ir = p.evaluate("() => window.__response()")
+    wiring = p.evaluate("() => window.__wiring()")
+    check("the wet can be read on its own", p.evaluate("() => window.__tapWet()"))
+
+    check("the plate bus is built with the audio context", ir is not None and wiring is not None)
+    if ir and wiring:
+        check("the response is stereo", ir["channels"] == 2, f"{ir['channels']} channels")
+        check("the response outlasts the note's own 2.5s release",
+              ir["seconds"] > 2.55, f"{round(ir['seconds'], 2)}s")
+        # A plate has no pre-delay and no discrete early reflections: it is dense
+        # from its first sample. A room response would be near silent here.
+        check("the response is dense from its first millisecond",
+              ir["firstMs"] > ir["early"] * 0.5,
+              f"first ms {ir['firstMs']:.5f} against early {ir['early']:.5f}")
+        check("the response decays to a tail", ir["late"] < ir["early"] * 0.05,
+              f"late {ir['late']:.6f} against early {ir['early']:.5f}")
+        check("the two sides of the plate are decorrelated",
+              abs(ir["correlation"]) < 0.15, f"correlation {ir['correlation']:.4f}")
+        # Measured on this graph: the convolver's own normalize took a 0.22 send
+        # down to 2.8% of what is heard, so the send meant nothing predictable.
+        # It is off, and the response carries its own scaling.
+        check("the response is scaled by hand, not by the convolver",
+              ir["normalize"] is False, f"normalize {ir['normalize']}")
+        check("the send reaches the plate through the highpass",
+              wiring["sendToHighpass"] and wiring["highpassToConvolver"],
+              f"send->hp {wiring['sendToHighpass']}, hp->conv {wiring['highpassToConvolver']}")
+        check("the plate reaches the output", wiring["convolverToOutput"])
+        check("a voice lands on both the output and the send",
+              wiring["voicesIntoSend"] >= 1
+              and wiring["voicesIntoOutput"] >= wiring["voicesIntoSend"],
+              f"{wiring['voicesIntoSend']} into the send, "
+              f"{wiring['voicesIntoOutput']} into the output")
+
+    wet_on = hold_and_read()
+    shipped_send = p.evaluate("() => plateReverb.send.gain.value")
+    p.evaluate("() => { plateReverb.send.gain.value = 0; }")
+    wet_off = hold_and_read()
+    width_on = wet_on["side"] / max(wet_on["mid"], 1e-9)
+    width_off = wet_off["side"] / max(wet_off["mid"], 1e-9)
+
+    check("with the plate silenced the synth is dead mono", width_off < 0.01,
+          f"width {width_off:.4f}")
+    check("the plate is audible as width on a held note", width_on > 0.06,
+          f"width {width_on:.4f} against {width_off:.4f} silenced")
+    # Read off the convolver rather than off the total. The total is the wrong
+    # place to look: a decorrelated plate at -15dB moves the mid channel by
+    # under one percent, so a band drawn there is either unsatisfiable or
+    # meaningless.
+    #
+    # The band here is wide on purpose. The synth draws its pitch at random over
+    # four octaves and the plate answers each pitch differently, so this reading
+    # came out at 8.4, 11.4, 16.9 and 27.4 percent over four runs with nothing
+    # changed. A tight band would fail on a draw rather than on a defect. What
+    # pins the magnitude deterministically is the send check below; this pair
+    # proves the plate is genuinely in the output and has not swallowed it.
+    share = wet_on["wet"] / max(wet_on["mid"], 1e-9)
+    check("the plate is present in what is heard", share > 0.03, f"{share * 100:.1f}%")
+    check("the plate has not taken the sound over", share < 0.50, f"{share * 100:.1f}%")
+    check("silencing the plate leaves nothing wet", wet_off["wet"] < wet_on["wet"] * 0.02,
+          f"{wet_off['wet']:.6f} against {wet_on['wet']:.5f}")
+    check("the send is set low", 0.1 <= shipped_send <= 0.5, f"send {shipped_send}")
+
+    # The wet comes off the voice, so the volume slider has to take it with it.
+    # A plate fed from anywhere else would keep ringing through a muted synth.
+    p.evaluate("(v) => { plateReverb.send.gain.value = v; }", shipped_send)
+    p.evaluate(
+        """() => {
+        const s = document.getElementById('synthVolumeSlider');
+        s.value = 0;
+        s.dispatchEvent(new Event('input', { bubbles: true }));
+    }"""
+    )
+    muted = hold_and_read(500)
+    check("pulling the volume down takes the plate with it",
+          muted["side"] < wet_on["side"] * 0.1,
+          f"side {muted['side']:.6f} against {wet_on['side']:.6f} at full volume")
+    p.close()
+
     # The cluster sits top left beside Harmony and clears the mobile menu
     # button. 320 is in the list because that is the width where the untightened
     # bar ended exactly on the button, with a gap of 0.0.
@@ -426,6 +665,7 @@ with sync_playwright() as pw:
         )
         check(f"{label}: every cell has a photo slice", r["n"] == r["photo"], f"{r['photo']}/{r['n']}")
         p.close()
+
     # The slice checks above pass whether the sky reads as cloud or as a smear,
     # which is how the first version shipped as a colour wash. These score the
     # asset the server actually hands out, through the portrait crop a phone
