@@ -50,13 +50,40 @@ function tintOf(cell) {
     return cell.querySelector('.tint') || cell;
 }
 
+// Brightness a held cell lifts to before the drag modulates it. Read from the
+// stylesheet rather than repeated here, so the preview knob still governs it.
+function basePlayLift() {
+    const v = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--hero-play-lift')
+    );
+    return Number.isNaN(v) ? 1.35 : v;
+}
+
 // Preview knobs, inert unless the query string asks for them.
 //   ?sky=3|4|5|6  how far the photo's own regional colour is amplified
 //   ?dim=0..1     grid opacity over the black page
+//   ?off=0..1     how far a resting cell dims (0 is the old black hole)
+//   ?lift=1..2    how much a held cell brightens
+//   ?tint=0..1    how far a held cell takes the colour, 1 is the full hue
 // These exist so the look can be judged on a real device. Drop them, and the
 // spare hero-sky-k*.webp files, once the setting is chosen.
 (function applyHeroPreviewParams() {
     const params = new URLSearchParams(window.location.search);
+
+    const off = parseFloat(params.get('off'));
+    if (!Number.isNaN(off) && off >= 0 && off <= 1) {
+        document.documentElement.style.setProperty('--hero-off', off);
+    }
+
+    const lift = parseFloat(params.get('lift'));
+    if (!Number.isNaN(lift) && lift >= 1 && lift <= 2) {
+        document.documentElement.style.setProperty('--hero-play-lift', lift);
+    }
+
+    const tint = parseFloat(params.get('tint'));
+    if (!Number.isNaN(tint) && tint >= 0 && tint <= 1) {
+        document.documentElement.style.setProperty('--hero-tint', tint);
+    }
 
     const sky = params.get('sky');
     if (sky && /^[3-6]$/.test(sky)) {
@@ -560,7 +587,9 @@ function activateCell(cell) {
     tint.style.transition = 'none';
     tint.style.backgroundColor = color;
     cell.style.opacity = '1';
+    // off comes away before playing goes on: the two carry different filters
     if (wasOff) cell.classList.remove('off');
+    cell.classList.add('playing');
 
     return color;
 }
@@ -595,6 +624,15 @@ function updateCellColor(cell, deltaX, deltaY) {
     const newLight = Math.max(20, Math.min(80, baseLight + lightShift));
 
     tintOf(cell).style.backgroundColor = `hsl(${newHue}, ${newSat}%, ${newLight}%)`;
+
+    // Horizontal drag is documented as brightness, and the colour layer can no
+    // longer carry that: its luminance comes from the photo now, so a lightness
+    // shift inside the tint is discarded by the blend. The cell's own lift
+    // carries it instead, which keeps the gesture reading as it always did.
+    cell.style.setProperty(
+        '--hero-play-lift',
+        (basePlayLift() * (1 + horizNorm * 0.25)).toFixed(3)
+    );
 }
 
 // Fade cell color when note is released - synced with audio fade
@@ -604,11 +642,15 @@ function fadeCell(cell, fadeTime) {
 
     // Start fade transition synced with audio
     requestAnimationFrame(() => {
-        cell.style.transition = `opacity ${fadeTime}s ease-out`;
+        cell.style.transition = `opacity ${fadeTime}s ease-out, filter ${fadeTime}s ease-out`;
         tint.style.transition = `background-color ${fadeTime}s ease-out`;
         tint.style.backgroundColor = 'transparent';
+        cell.classList.remove('playing');
         if (wasOff) {
-            cell.style.opacity = '0';
+            // Hand opacity back to CSS and let the .off rule carry it down, so
+            // the resting dim level lives in one place instead of two.
+            cell.style.opacity = '';
+            cell.classList.add('off');
         }
     });
 
@@ -618,7 +660,7 @@ function fadeCell(cell, fadeTime) {
         tint.style.transition = '';
         tint.style.backgroundColor = '';
         cell.style.opacity = '';
-        if (wasOff) cell.classList.add('off');
+        cell.style.removeProperty('--hero-play-lift');
         delete cell.dataset.activeColor;
         delete cell.dataset.wasOff;
     }, fadeTime * 1000 + 50);
@@ -662,6 +704,15 @@ function initHeroGrid() {
         const cell = document.createElement('div');
         cell.className = 'cell';
 
+        // This cell's slice of the photo. Every cell gets one, the logo cell
+        // included, so the sky runs unbroken behind the mark.
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        cell.style.backgroundImage = `url('${HERO_PHOTO.src}')`;
+        cell.style.backgroundSize = `${photoW}px ${photoH}px`;
+        cell.style.backgroundPosition =
+            `${photoX - col * (cellW + GRID_GAP)}px ${photoY - row * (cellH + GRID_GAP)}px`;
+
         // Center cell gets the logo
         if (i === centerIndex) {
             cell.classList.add('logo-cell');
@@ -684,14 +735,6 @@ function initHeroGrid() {
                 playWavePattern();
             });
         } else {
-            // This cell's slice of the photo
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            cell.style.backgroundImage = `url('${HERO_PHOTO.src}')`;
-            cell.style.backgroundSize = `${photoW}px ${photoH}px`;
-            cell.style.backgroundPosition =
-                `${photoX - col * (cellW + GRID_GAP)}px ${photoY - row * (cellH + GRID_GAP)}px`;
-
             // Colour layer for the synth, kept separate from the photo
             const tint = document.createElement('i');
             tint.className = 'tint';

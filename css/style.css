@@ -247,7 +247,11 @@ body {
 
 /* Each cell carries its own slice of the hero photo. JS sets background-size
    and background-position per cell so the slices reassemble into one image
-   across the gaps. The white background is the fallback if the photo fails. */
+   across the gaps. The white background is the fallback if the photo fails.
+   No isolation here on purpose: the tint's blend already sees only this cell,
+   because the cell's own background is painted directly beneath it and cells
+   never overlap. isolation: isolate was tried and measured to change zero
+   pixels, in the cell and in a band around it, at every grid opacity. */
 .hero-grid .cell {
     position: relative;
     background-color: var(--white);
@@ -255,21 +259,38 @@ body {
     transition: opacity 0.5s ease;
 }
 
+/* A resting cell dims rather than disappearing. At opacity 0 it punched a black
+   hole through the photo; the sky has to stay continuous across the whole grid.
+   Dimming toward black drains the colour with the light, so the saturation is
+   put back: measured on one cell, it lifts saturation 0.163 to 0.243 and leaves
+   luma and hue where they were. Both filters carry the same function list so
+   the swap between resting and held interpolates instead of snapping. */
 .hero-grid .cell.off {
-    opacity: 0;
+    opacity: var(--hero-off, 0.55);
+    filter: brightness(1) saturate(1.35);
 }
 
-/* Synth colour layer. Sits over the photo slice so a held cell reads as solid
-   colour, then fades back to reveal the photo underneath on release. */
+/* Synth colour layer. mix-blend-mode: color takes its hue and saturation from
+   this layer and its luminance from the photo underneath, so a held cell reads
+   as that piece of sky in a colour, keeping every cloud edge and every grain,
+   instead of covering it with a flat block. */
 .hero-grid .cell .tint {
     position: absolute;
     inset: 0;
     background-color: transparent;
+    mix-blend-mode: color;
+    opacity: var(--hero-tint, 1);
     pointer-events: none;
 }
 
+/* The held cell also lifts, because hue alone is a quiet signal on a dark
+   slice. Luma only: the photo's own contrast is untouched. */
+.hero-grid .cell.playing {
+    filter: brightness(var(--hero-play-lift, 1.35)) saturate(1);
+}
+
 .hero-grid .cell.logo-cell {
-    background: #000;
+    background-color: #000;
     opacity: 1;
     display: flex;
     align-items: center;
@@ -278,12 +299,16 @@ body {
     overflow: hidden;
 }
 
+/* The logo art is black ink on white. invert makes it white ink on black, and
+   screen then drops that black to nothing, so the mark floats on the photo
+   instead of sitting on a plate. */
 .hero-grid .cell.logo-cell .logo-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     object-position: center center;
     filter: invert(1);
+    mix-blend-mode: screen;
 }
 
 /* Sections */
