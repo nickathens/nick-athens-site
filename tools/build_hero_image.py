@@ -7,11 +7,23 @@ structure is real and regional: warm on the left and along the bottom, cool
 blue through the lower centre, magenta into violet up the right edge. This
 script amplifies that regional colour without inventing any.
 
-Method: split to YCbCr. Luma is untouched, so every bit of cloud detail and
-film grain survives. Chroma is split into a low frequency part (the region's
+Method: split to YCbCr. Chroma is split into a low frequency part (the region's
 colour, from a heavy gaussian) and a high frequency part (chroma grain). Only
 the low frequency part is multiplied. Keeping the chroma grain at unity is what
 stops the amplified gradients from banding: the grain dithers them for free.
+
+Luma was untouched in the first version and that was the mistake. The scan's
+cloud edges carry a standard deviation of about 5 levels out of 255, so once the
+regional chroma is multiplied five times the colour simply drowns the form and
+the sky reads as a wash rather than as clouds. Measured on the shipped asset
+through the portrait crop a phone actually gets: cloud-form 5.2, saturation 27.
+
+So luma is split into three bands rather than lifted whole. The base (heavy
+gaussian, cloud sized) carries the exposure and stays put. The band between
+grain and base is the cloud structure and is the only thing multiplied. Grain
+sits above it and stays at unity, so clarity sharpens the sky without turning
+the film stock crunchy. Same crop after: cloud-form 13.2, saturation 27.5, so
+the colour Nick picked is untouched and only the form comes back.
 
 Usage:
     python tools/build_hero_image.py                 # ships k=5 to images/
@@ -30,12 +42,26 @@ OUT_DIR = ROOT / "images"
 
 WIDTH = 1920          # long edge of the shipped asset
 QUALITY = 82          # webp quality, chosen by eye on a 1:1 crop
-BLUR_DIVISOR = 24     # gaussian radius = width / this
+BLUR_DIVISOR = 24     # chroma gaussian radius = width / this
+FORM_DIVISOR = 48     # luma base radius, the scale a cloud mass occupies
+GRAIN_DIVISOR = 400   # luma grain radius, everything finer than a cloud edge
 DEFAULT_K = 5         # chroma amplification actually shipped
+DEFAULT_CLARITY = 3   # cloud-band amplification actually shipped
+
+# The portrait view this asset is judged in. A phone keeps under a third of a
+# 3:2 frame, so it is the strict case and the one the wash showed up in.
+# PHONE_FOCUS_X must track HERO_PHOTO.focusX in js/main.js.
+PHONE_ASPECT = 393 / 852
+PHONE_FOCUS_X = 0.78
 
 
-def grade(src: Image.Image, k: float) -> Image.Image:
-    """Amplify regional chroma by k, leaving luma and chroma grain alone."""
+def grade(src: Image.Image, k: float, clarity: float = DEFAULT_CLARITY) -> Image.Image:
+    """Amplify regional chroma by k and cloud-band luma by clarity.
+
+    Both leave their own grain at unity: chroma grain because it dithers the
+    amplified colour gradients, luma grain because multiplying it is what makes
+    a clarity pass look like sharpening instead of like weather.
+    """
     luma, cb, cr = src.convert("YCbCr").split()
     radius = src.size[0] / BLUR_DIVISOR
 
@@ -46,8 +72,17 @@ def grade(src: Image.Image, k: float) -> Image.Image:
         grain = full - low
         out.append(np.clip(128 + (low - 128) * k + grain, 0, 255).astype(np.uint8))
 
+    full = np.asarray(luma, dtype=np.float32)
+    fine = np.asarray(
+        luma.filter(ImageFilter.GaussianBlur(radius=src.size[0] / GRAIN_DIVISOR)), dtype=np.float32
+    )
+    base = np.asarray(
+        luma.filter(ImageFilter.GaussianBlur(radius=src.size[0] / FORM_DIVISOR)), dtype=np.float32
+    )
+    lit = np.clip(base + (fine - base) * clarity + (full - fine), 0, 255).astype(np.uint8)
+
     return Image.merge(
-        "YCbCr", [luma, Image.fromarray(out[0]), Image.fromarray(out[1])]
+        "YCbCr", [Image.fromarray(lit), Image.fromarray(out[0]), Image.fromarray(out[1])]
     ).convert("RGB")
 
 
@@ -58,9 +93,29 @@ def saturation_stats(img: Image.Image) -> tuple[float, float]:
     return float(sat.mean()), float(np.percentile(sat, 95))
 
 
+def cloud_form(img: Image.Image) -> float:
+    """Standard deviation of the cloud-sized luma band. How much sky reads as cloud.
+
+    Measured through the crop a portrait phone actually gets, since that is the
+    view where the wash was visible and the desktop one was not.
+    """
+    a = np.asarray(img, dtype=np.float32)
+    luma = Image.fromarray(
+        (0.299 * a[..., 0] + 0.587 * a[..., 1] + 0.114 * a[..., 2]).astype(np.uint8)
+    )
+    w, h = img.size
+    fine = np.asarray(luma.filter(ImageFilter.GaussianBlur(radius=w / GRAIN_DIVISOR)), np.float32)
+    base = np.asarray(luma.filter(ImageFilter.GaussianBlur(radius=w / FORM_DIVISOR)), np.float32)
+    keep = round(w * (PHONE_ASPECT / (w / h)))
+    x0 = round((w - keep) * PHONE_FOCUS_X)
+    return float((fine - base)[:, x0:x0 + keep].std())
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--all", action="store_true", help="also write k=3,4,6 as preview assets")
+    ap.add_argument("--clarity", type=float, default=DEFAULT_CLARITY,
+                    help="cloud-band amplification (1 is the flat original)")
     args = ap.parse_args()
 
     src = Image.open(SOURCE).convert("RGB")
@@ -72,11 +127,12 @@ def main() -> None:
         targets += [(k, OUT_DIR / f"hero-sky-k{k}.webp") for k in (3, 4, 6)]
 
     for k, path in targets:
-        img = grade(src, k)
+        img = grade(src, k, args.clarity)
         img.save(path, "WEBP", quality=QUALITY, method=6)
         mean, p95 = saturation_stats(img)
-        print(f"{path.name:22s} k={k}  {path.stat().st_size:>7,} bytes  "
-              f"saturation mean {mean:.1f}%  p95 {p95:.1f}%")
+        print(f"{path.name:22s} k={k} clarity={args.clarity}  {path.stat().st_size:>7,} bytes  "
+              f"saturation mean {mean:.1f}%  p95 {p95:.1f}%  "
+              f"cloud form {cloud_form(img):.2f}")
 
 
 if __name__ == "__main__":

@@ -18,9 +18,17 @@ import colorsys
 import io
 import statistics
 import sys
+import urllib.parse
+import urllib.request
 
+import numpy as np
 from PIL import Image
 from playwright.sync_api import sync_playwright
+
+# The asset check below scores the served sky with the builder's own metric
+# rather than a second copy of it, so the two cannot drift apart. sys.path[0] is
+# this directory, and build_hero_image does nothing at import beyond defining.
+import build_hero_image  # noqa: E402
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8777/index.html"
 PROBE_CELL = 40
@@ -418,6 +426,37 @@ with sync_playwright() as pw:
         )
         check(f"{label}: every cell has a photo slice", r["n"] == r["photo"], f"{r['photo']}/{r['n']}")
         p.close()
+    # The slice checks above pass whether the sky reads as cloud or as a smear,
+    # which is how the first version shipped as a colour wash. These score the
+    # asset the server actually hands out, through the portrait crop a phone
+    # gets, which is the strict view: it keeps under a third of the frame.
+    served = urllib.request.urlopen(  # noqa: S310  (fixed scheme, own server)
+        urllib.parse.urljoin(URL, "images/hero-sky.webp"), timeout=30
+    ).read()
+    sky = Image.open(io.BytesIO(served)).convert("RGB")
+    form = build_hero_image.cloud_form(sky)
+
+    # The control is the flat sky that actually shipped, rebuilt out of these
+    # same bytes by scaling the cloud band back down by the clarity that was
+    # applied to it. Without a control the floor is a number nobody has shown a
+    # failing image can fall under. A first attempt at this used a plain
+    # gaussian and scored 10.86, over the floor, because a blur at grain scale
+    # leaves the cloud band standing: it would have passed on a smeared sky.
+    flat = build_hero_image.grade(sky, 1, 1 / build_hero_image.DEFAULT_CLARITY)
+    flat_form = build_hero_image.cloud_form(flat)
+
+    a = np.asarray(sky, dtype=np.float32)
+    keep = round(sky.size[0] * (build_hero_image.PHONE_ASPECT / (sky.size[0] / sky.size[1])))
+    x0 = round((sky.size[0] - keep) * build_hero_image.PHONE_FOCUS_X)
+    window = a[:, x0:x0 + keep]
+    mx, mn = window.max(2), window.min(2)
+    sat = float((np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0) * 100).mean())
+
+    check("the sky the server hands out reads as cloud, not as a wash",
+          form > 9.0, f"cloud form {form:.2f}, the flat version scored 5.20")
+    check("that reading can tell a flat sky apart", flat_form < 9.0,
+          f"blurred control scored {flat_form:.2f}")
+    check("the colour survived the clarity pass", sat > 24.0, f"saturation {sat:.1f}%")
     b.close()
 
 print("\n" + ("ALL PASS" if not FAILS else f"{len(FAILS)} FAILED: {FAILS}"))
