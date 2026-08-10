@@ -460,7 +460,7 @@ function playTuningNote(cell) {
         const oscillator = ctx.createOscillator();
         const filter = ctx.createBiquadFilter();
 
-        // Shape chosen in the nav, sawtooth unless the visitor changed it
+        // Shape chosen in the nav, square unless the visitor changed it
         oscillator.type = synthWaveform;
 
         // Calculate frequency from cents (100 cents = 1 semitone)

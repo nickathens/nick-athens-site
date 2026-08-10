@@ -739,6 +739,14 @@ with sync_playwright() as pw:
         check(f"{label}: every cell has a photo slice", r["n"] == r["photo"], f"{r['photo']}/{r['n']}")
         p.close()
 
+    def asset_width(name):
+        """Pixel width of an asset as the server hands it out."""
+        req = urllib.request.Request(
+            urllib.parse.urljoin(URL, f"images/{name}"),
+            headers={"User-Agent": "nick-athens-site verify_hero"},
+        )
+        return Image.open(io.BytesIO(urllib.request.urlopen(req, timeout=30).read())).size[0]  # noqa: S310,E501
+
     # Which density each device actually downloads, and how far it then has to
     # stretch it. The grid cover-fits the photo across the viewport, so the
     # pixels asked for are the viewport times the device ratio: reading the CSS
@@ -765,8 +773,12 @@ with sync_playwright() as pw:
         # Both densities being fetched would be a silent doubling of the page
         # weight that the density check above would not notice.
         check(f"{label} downloads one file, not both", len(fetched) == 1, f"{fetched}")
-        served_w = 3072 if want.endswith("@2x.webp") else 1920
-        scale = css_w * dpr / served_w
+        # The width comes out of the bytes the server actually sent, not out of
+        # the name that was expected. Deriving it from `want` made this check
+        # measure a real 2.0x stretch as 1.25x when a mutation pointed the 2x
+        # entry at the 1x file: internally valid, against the wrong reference.
+        served_w = asset_width(fetched[0]) if len(fetched) == 1 else 0
+        scale = css_w * dpr / served_w if served_w else float("inf")
         check(f"{label} stretches it less than 1.4x", scale < 1.4,
               f"{round(css_w * dpr)} device px from {served_w}, {scale:.2f}x")
 
